@@ -1,6 +1,13 @@
 import numpy as np
 import argparse
 import matplotlib.pyplot as plt
+import torch
+import torch.nn.functional as F
+
+from pytorch3d.structures import Meshes
+from pytorch3d.renderer import MeshRasterizer, RasterizationSettings, OrthographicCameras
+
+
 
 def read_depth_image(file_path, width:int):
     data = np.load(file_path)
@@ -48,9 +55,12 @@ def main():
     except FileNotFoundError:
         print(f"Warning: Depth image not found at {args.depth_path}")
 
-    display_images(rgb, depth)
+    # display_images(rgb, depth)
     
+    with open('/mast3r_ign/output/intrinsics.txt') as f:
+        k = np.array(eval(f.read()))
+        print(f"Camera intrinsics:\n{k} {type(k)}")
 
-
+    # continue here : https://chatgpt.com/share/6a2c4367-5fdc-83eb-8e9c-7b59743e8195
 if __name__ == "__main__":
     main()
