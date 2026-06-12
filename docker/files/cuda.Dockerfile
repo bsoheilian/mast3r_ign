@@ -25,5 +25,18 @@ RUN pip install -r /tmp/requirements.txt
 RUN pip install opencv-python==4.8.0.74
 RUN pip install "gradio>=4.0,<6.0"
 
+RUN apt-get update && apt-get install -y \
+    ninja-build \
+    cmake \
+    libopenblas-dev \
+    libgl1 \
+    && rm -rf /var/lib/apt/lists/*
+
+#RUN which nvcc && nvcc --version
+# RUN pip install pytorch3d
+RUN git clone https://github.com/facebookresearch/pytorch3d.git /opt/pytorch3d && \
+    cd /opt/pytorch3d && \
+    pip install -e .
+
 # Runtime location (mounted repo)
 WORKDIR /mast3r_ign
