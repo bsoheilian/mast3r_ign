@@ -11,7 +11,19 @@ if __name__ == '__main__':
     model_name = "./docker/files/checkpoints/checkpoint-aerial-mast3r.pth"
     # you can put the path to a local checkpoint in model_name if needed
     model = AsymmetricMASt3R.from_pretrained(model_name).to(device)
-    images = load_images(['./data/aerial.jpg', './data/fisheye.jpg'], size=512)
+    
+    # img_aerial = './data/25FD5920x00021_00312_02052025_1118_13133.jpg'
+    # img_ground = './data/Lille-150127_0485-11-00010_0000572.jpg'
+    # data_path_root = 'data/chantier_lilles/pva_crop/Lille-150127_0485-11-00005_0000528/'
+    # img_aerial = data_path_root + '25FD5920x00021_00309_02052025_4907_11720.jpg'
+    # img_ground = data_path_root + 'Lille-150127_0485-11-00005_0000528_subsampled_S4.jpg'
+
+    data_path_root = 'data/chantier_lilles/pva_crop/Lille-150127_0485-11-00010_0000572/'
+    img_aerial = data_path_root + '25FD5920x00021_00312_02052025_1118_13133.jpg'
+    img_ground = data_path_root + 'Lille-150127_0485-11-00010_0000572_subsampled_S4.jpg'
+
+    # images = load_images([img_aerial, img_ground], size=256)
+    images = load_images([img_ground, img_aerial], size=128, square_ok=True)
     output = inference([tuple(images)], model, device, batch_size=1, verbose=False)
 
     # at this stage, you have the raw dust3r predictions
