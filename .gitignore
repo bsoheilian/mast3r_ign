@@ -139,3 +139,9 @@ data/pano.jpg
 data/street_rect.jpg
 data/street.jpg
 data/street2.jpg
+output/debug_depthmap_Lille-150127_0485-11-00002_0000384.jpg_2.npy
+output/debug_depthmap_Lille-150127_0485-11-00002_0000384.jpg.npy
+output/debug_output.txt
+output/debug_rgb_Lille-150127_0485-11-00002_0000384.jpg_2.npy
+output/debug_rgb_Lille-150127_0485-11-00002_0000384.jpg.npy
+output/*
