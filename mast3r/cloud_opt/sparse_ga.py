@@ -90,6 +90,7 @@ class SparseGA():
 
         if clean_depth:
             confs = clean_pointcloud(confs, self.intrinsics, inv(self.cam2w), depthmaps, pts3d)
+            
 
         return pts3d, depthmaps, confs
 
@@ -104,6 +105,7 @@ class SparseGA():
 
     def show(self, show_cams=True):
         pts3d, _, confs = self.get_dense_pts3d()
+        print(f'conf : {confs}')
         show_reconstruction(self.imgs, self.intrinsics if show_cams else None, self.cam2w,
                             [p.clip(min=-50, max=50) for p in pts3d],
                             masks=[c > 1 for c in confs])
@@ -509,12 +511,16 @@ def proj3d(inv_K, pixels, z):
         pixels = torch.cat((pixels, torch.ones_like(pixels[..., :1])), dim=-1)
     return z.unsqueeze(-1) * (pixels * inv_K.diag() + inv_K[:, 2] * mask110(z.device, z.dtype))
 
-
+# bahman check here how the 3D point is generated from intrinsic and depth
 def make_pts3d(anchors, K, cam2w, depthmaps, base_focals=None, ret_depth=False):
     focals = K[:, 0, 0]
     invK = inv(K)
     all_pts3d = []
     depth_out = []
+# print(f'conf : {len(confs)} : {[conff.shape for conff in confs]}')
+    print("make_pts3d")
+    print(f' - K:{K}')
+
 
     for img, (pixels, idxs, offsets) in anchors.items():
         # from depthmaps to 3d points
@@ -525,6 +531,12 @@ def make_pts3d(anchors, K, cam2w, depthmaps, base_focals=None, ret_depth=False):
             # depth + depth * (offset - 1) * base_focal / focal
             # = depth * (1 + (offset - 1) * (base_focal / focal))
             offsets = 1 + (offsets - 1) * (base_focals[img] / focals[img])
+        
+        print(f' - depthmaps.shape[{img}]: {depthmaps[img].shape}')
+        print(f' - pixels.shape: {pixels.shape}')
+        # the K is based on the original image resampled (288x512) and pixels should be in those images as well
+        # the corresponding depth is not referenced by pixel coordinates but with idx and an offset is also applied
+        #pixels, idx and offsets are included in anchors
 
         pts3d = proj3d(invK[img], pixels, depthmaps[img][idxs] * offsets)
         if ret_depth:

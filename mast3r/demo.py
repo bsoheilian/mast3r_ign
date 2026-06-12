@@ -132,17 +132,42 @@ def get_3D_model_from_scene(silent, scene_state, min_conf_thr=2, as_pointcloud=F
     focals = scene.get_focals().cpu()
     cams2world = scene.get_im_poses().cpu()
 
+    # Bahman for understanding the output of mast3r, you can print the following values:
+    print('cams2world', cams2world)
+    print('focals', focals)   
+    print('intrinsics', scene.intrinsics)
+    print('img_paths', scene.img_paths)
+    
+    with open('/mast3r_ign/output/debug_output.txt', 'w') as f:
+        f.write(f'cams2world: {cams2world}\n')
+        f.write(f'focals: {focals}\n')
+        f.write(f'intrinsics: {scene.intrinsics}\n')
+        f.write(f'img_paths: {scene.img_paths}\n')
+    
+    deptmaps = scene.get_depthmaps()
+    for idx, depth in enumerate(deptmaps):
+        img_name = scene.img_paths[idx].split('/')[-1] if idx < len(scene.img_paths) else f'depth_{idx}'
+        output_file = f'/mast3r_ign/output/debug_depthmap_{img_name}.npy'
+        img_output_file = f'/mast3r_ign/output/debug_rgb_{img_name}.npy'
+        np.save(img_output_file, to_numpy(rgbimg[idx]))
+        print(f'writing depthmap for {img_name}')
+        np.save(output_file, to_numpy(deptmaps[idx]))
+    
+
+
     # 3D pointcloud from depthmap, poses and intrinsics
     if TSDF_thresh > 0:
         tsdf = TSDFPostProcess(scene, TSDF_thresh=TSDF_thresh)
         pts3d, _, confs = to_numpy(tsdf.get_dense_pts3d(clean_depth=clean_depth))
     else:
         pts3d, _, confs = to_numpy(scene.get_dense_pts3d(clean_depth=clean_depth))
+    print(f'conf : {len(confs)} : {[conff.shape for conff in confs]}')
+
     msk = to_numpy([c > min_conf_thr for c in confs])
     return _convert_scene_output_to_glb(outfile, rgbimg, pts3d, msk, focals, cams2world, as_pointcloud=as_pointcloud,
                                         transparent_cams=transparent_cams, cam_size=cam_size, silent=silent)
 
-
+# bahman this function is called for 3D reconstruction 
 def get_reconstructed_scene(outdir, gradio_delete_cache, model, retrieval_model, device, silent, image_size,
                             current_scene_state, filelist, optim_level, lr1, niter1, lr2, niter2, min_conf_thr,
                             matching_conf_thr, as_pointcloud, mask_sky, clean_depth, transparent_cams, cam_size,
@@ -195,10 +220,13 @@ def get_reconstructed_scene(outdir, gradio_delete_cache, model, retrieval_model,
     else:
         cache_dir = os.path.join(outdir, 'cache')
     os.makedirs(cache_dir, exist_ok=True)
+    
+    # Bahman, sub sampling 8 the depth map seems to happen here for the first time
     scene = sparse_global_alignment(filelist, pairs, cache_dir,
                                     model, lr1=lr1, niter1=niter1, lr2=lr2, niter2=niter2, device=device,
                                     opt_depth='depth' in optim_level, shared_intrinsics=shared_intrinsics,
-                                    matching_conf_thr=matching_conf_thr, **kw)
+                                    matching_conf_thr=matching_conf_thr, 
+                                    subsample = 1, **kw)
     if current_scene_state is not None and \
         not current_scene_state.should_delete and \
             current_scene_state.outfile_name is not None:
