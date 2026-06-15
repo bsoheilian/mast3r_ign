@@ -38,5 +38,7 @@ RUN git clone https://github.com/facebookresearch/pytorch3d.git /opt/pytorch3d &
     cd /opt/pytorch3d && \
     pip install -e .
 
+RUN pip install open3d    
+
 # Runtime location (mounted repo)
 WORKDIR /mast3r_ign
