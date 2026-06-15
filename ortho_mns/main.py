@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 from pytorch3d.structures import Meshes
 from pytorch3d.renderer import MeshRasterizer, RasterizationSettings, OrthographicCameras
+from geometric_operation import OrthoRectifier
 
 
 
@@ -31,6 +32,7 @@ def display_images(rgb, depth):
     plt.show()
 
 def main():
+    np.set_printoptions(precision=12, suppress=True)
     rgp_path = "./output/debug_rgb_Lille-150127_0485-11-00002_0000384.jpg_2.npy"
     depth_path = "./output/debug_depthmap_Lille-150127_0485-11-00002_0000384.jpg_2.npy"
     parser = argparse.ArgumentParser(
@@ -45,22 +47,33 @@ def main():
     try:
         rgb = read_rgb_image(args.rgb_path)
         width = rgb.shape[1]
-        print(f"RGB image shape: {rgb.shape}")
+        print(f"RGB image {type(rgb)} shape: {rgb.shape}")
     except FileNotFoundError:
         print(f"Warning: RGB image not found at {args.rgb_path}")
        
     try:
         depth = read_depth_image(args.depth_path, width)
-        print(f"Depth image shape: {depth.shape}")
+        print(f"Depth image {type(depth)} shape: {depth.shape}")
     except FileNotFoundError:
         print(f"Warning: Depth image not found at {args.depth_path}")
 
-    # display_images(rgb, depth)
-    
     with open('/mast3r_ign/output/intrinsics.txt') as f:
         k = np.array(eval(f.read()))
         print(f"Camera intrinsics:\n{k} {type(k)}")
 
-    # continue here : https://chatgpt.com/share/6a2c4367-5fdc-83eb-8e9c-7b59743e8195
+    with open('/mast3r_ign/output/rot_copy.txt') as f:
+        rot = np.array(eval(f.read()))
+        print(f"Camera rotation:\n{rot} {type(rot)}")
+
+    with open('/mast3r_ign/output/trans.txt') as f:
+        trans = np.array(eval(f.read()))
+        print(f"Camera translation:\n{trans} {type(trans)}")
+        
+    
+
+    ortho_rectifier = OrthoRectifier(rgb, depth, k, rot, trans)
+    ortho_rectifier.run()
+    
+    
 if __name__ == "__main__":
     main()
