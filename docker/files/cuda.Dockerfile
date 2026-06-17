@@ -36,6 +36,10 @@ RUN apt-get update && apt-get install -y \
 # RUN pip install pytorch3d
 RUN git clone https://github.com/facebookresearch/pytorch3d.git /opt/pytorch3d && \
     cd /opt/pytorch3d && \
+    export USE_CUDA=1 && \
+    export FORCE_CUDA=1 && \
+    export CUDA_HOME=/usr/local/cuda && \
+    export TORCH_CUDA_ARCH_LIST="8.6;8.9;9.0;12.0" && \
     pip install -e .
 
 RUN pip install open3d    

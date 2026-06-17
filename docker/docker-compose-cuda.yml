@@ -26,6 +26,7 @@ services:
     cap_add:
       - IPC_LOCK
       - SYS_RESOURCE
+    gpus: all
     # runtime: nvidia
     deploy:
       resources:
