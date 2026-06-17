@@ -22,9 +22,9 @@ def depth_to_3d(depth, K, R, t, device='cuda'):
     
     Args:
         depth: (H, W) tensor, per-pixel depth in camera coordinates.
-        K: (3, 3) tensor, camera intrinsics matrix.
-        R: (3, 3) tensor, rotation matrix (world to camera).
-        t: (3,) tensor, translation vector (world to camera).
+        K: (3, 3) tensor or array, camera intrinsics matrix.
+        R: (3, 3) tensor, rotation matrix (camera to world).
+        t: (3,) tensor, translation vector (camera to world).
         device: str, device to use for computation.
     
     Returns:
@@ -34,14 +34,21 @@ def depth_to_3d(depth, K, R, t, device='cuda'):
     u = torch.arange(W, device=device).float()
     v = torch.arange(H, device=device).float()
     u, v = torch.meshgrid(u, v, indexing='xy')
+        # Convert K to torch tensor on device if needed
+    if not isinstance(K, torch.Tensor):
+        K = torch.from_numpy(K).float().to(device)
+    else:
+        K = K.to(device).float()
+    
     
     # Backproject to camera coordinates
-    Z = depth.to(device)
+    Z = depth.to(device).float()
     X = (u - K[0, 2]) * Z / K[0, 0]
     Y = (v - K[1, 2]) * Z / K[1, 1]
     points_cam = torch.stack([X, Y, Z], dim=-1)  # (H, W, 3)
     
-    # Transform to world coordinates
+    # Transform to world coordinates (R is camera-to-world, t is camera-to-world translation)
+    t = t.to(device).float() if isinstance(t, torch.Tensor) else torch.tensor(t, device=device, dtype=torch.float32)
     points_world = torch.einsum('ij,hwj->hwi', R, points_cam) + t
     return points_world
 
@@ -71,8 +78,9 @@ def rasterize_to_dsm(points_world, rgb, xmin, xmax, ymin, ymax, rows, cols, devi
     
     # Scale to grid indices
     x_grid = ((x - xmin) / (xmax - xmin) * (cols - 1)).long()
-    y_grid = ((y - ymin) / (ymax - ymin) * (rows - 1)).long()
-    
+    # y_grid = ((y - ymin) / (ymax - ymin) * (rows - 1)).long()
+    y_grid = ((ymax - y) / (ymax - ymin) * (rows - 1)).long()
+
     # Clamp to grid bounds
     mask = (x_grid >= 0) & (x_grid < cols) & (y_grid >= 0) & (y_grid < rows)
     x_grid, y_grid, z = x_grid[mask], y_grid[mask], z[mask]
@@ -268,9 +276,10 @@ def main():
         print(f"Camera rotation:\n{R} {type(R)}")
         R = torch.from_numpy(R).float().to(device)
 
-    # with open('/mast3r_ign/output/trans.txt') as f:
-    #     t = np.array(eval(f.read()))
-    #     print(f"Camera translation:\n{t} {type(t)}")    
+    with open('/mast3r_ign/output/trans.txt') as f:
+        t = np.array(eval(f.read()))
+        print(f"Camera translation:\\n{t} {type(t)}")
+        t = torch.from_numpy(t).float().to(device)
 
     
     xmin, xmax, ymin, ymax = -10, 10, -10, 10
@@ -287,7 +296,7 @@ def main():
     rendered_image_pytorch3d = None
     # if HAS_PYTORCH3D:
     #     # Step 3: Render with PyTorch3D
-    #     rendered_image_pytorch3d = render_with_pytorch3d(dsm, ortho, xmin, xmax, ymin, ymax, rows, cols, device)
+    # rendered_image_pytorch3d = render_with_pytorch3d(dsm, ortho, xmin, xmax, ymin, ymax, rows, cols, device)
     # else:
     #     print("PyTorch3D is not installed; skipping PyTorch3D rendering.")
     
