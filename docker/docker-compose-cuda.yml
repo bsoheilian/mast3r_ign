@@ -23,6 +23,8 @@ services:
     volumes:
       - ../:/mast3r_ign
       - ../../../data/chantier_lilles/:/mast3r_ign/data/chantier_lilles
+    devices:
+      - /dev/dri:/dev/dri
     cap_add:
       - IPC_LOCK
       - SYS_RESOURCE
@@ -35,3 +37,4 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    

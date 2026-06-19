@@ -1,7 +1,7 @@
-from render import create_debug_renderer
+from render import create_debug_renderer, export_ply, export_textured_obj_fixed, export_xyzrgb_points_to_ply
 import torch
 import numpy as np
-from ortho import build_dsm_mesh, build_uvs_from_projection, build_textured_mesh, create_topdown_ortho_camera, create_ortho_renderer, render_ortho
+from ortho import build_dsm_mesh, build_uvs_from_projection, build_textured_mesh, create_topdown_ortho_camera, create_ortho_renderer, draw_textured_mesh_open3d, render_ortho
 from ortho import __build_uvs_from_projection
 try:
     from pytorch3d.structures import Meshes
@@ -30,41 +30,66 @@ def depth_to_3d(depth, K, R, t, device='cuda'):
         points_world: (H, W, 3) tensor, 3D points in world coordinates.
     """
     H, W = depth.shape
-    u = torch.arange(W, device=device).float()
-    v = torch.arange(H, device=device).float()
-    u, v = torch.meshgrid(u, v, indexing='xy')
-        # Convert K to torch tensor on device if needed
-    if not isinstance(K, torch.Tensor):
-        K = torch.from_numpy(K).float().to(device)
-    else:
-        K = K.to(device).float()
+    print(f"depth shape: {depth.shape}, dtype: {depth.dtype}")
+    u = torch.arange(W, device=device, dtype=depth.dtype)
+    v = torch.arange(H, device=device, dtype=depth.dtype)
+    # u, v = torch.meshgrid(u, v, indexing='xy')
     
+    u, v = torch.meshgrid(v, u, indexing='ij')  # <-- IMPORTANT FIX
+    
+    # Convert K to torch tensor on device if needed
+    if not isinstance(K, torch.Tensor):
+        K = torch.from_numpy(K).to(device).to(dtype=depth.dtype)
+    else:
+        K = K.to(device).to(dtype=depth.dtype)
     
     # Backproject to camera coordinates
-    Z = depth.to(device).float()
+    Z = depth.to(device).to(dtype=depth.dtype)
     X = (u - K[0, 2]) * Z / K[0, 0]
     Y = (v - K[1, 2]) * Z / K[1, 1]
     points_cam = torch.stack([X, Y, Z], dim=-1)  # (H, W, 3)
     
     # Transform to world coordinates (R is camera-to-world, t is camera-to-world translation)
-    t = t.to(device).float() if isinstance(t, torch.Tensor) else torch.tensor(t, device=device, dtype=torch.float32)
+    t = t.to(device).to(dtype=depth.dtype) if isinstance(t, torch.Tensor) else torch.tensor(t, device=device, dtype=depth.dtype)
     points_world = torch.einsum('ij,hwj->hwi', R, points_cam) + t
+    
+    PW = R @ points_cam.reshape(-1, 3).T + t.view(3, 1)
+    PW = PW.T.reshape(H, W, 3)
+    print(f"points_world shape: {points_world.shape}, dtype: {points_world.dtype}")
+    print(f"PW shape: {PW.shape}, dtype: {PW.dtype}")
+    print(f"Difference between points_world and PW: {(points_world - PW).abs().max()}")
+
+    # Apply inverse R and T to retrieve points_cam
+    R_inv = R.T
+    points_cam_retrieved = (R_inv @ (PW - t).reshape(-1, 3).T).T.reshape(H, W, 3)
+    
+    print(f"points_cam_retrieved shape: {points_cam_retrieved.shape}, dtype: {points_cam_retrieved.dtype}")
+    print(f"Difference between original points_cam and retrieved: {(points_cam - points_cam_retrieved).abs().max()}")
+    
     return points_world
 
 def main():
+    import matplotlib.pyplot as plt
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    rgb = np.load("./output/debug_rgb_Lille-150127_0485-11-00002_0000384.jpg_2.npy")
-    
-    rgb = torch.from_numpy(rgb).permute(2, 0, 1).float().to(device)  # Convert to tensor and normalize 
+    rgb_int = np.load("./output/debug_rgb_Lille-150127_0485-11-00002_0000384.jpg_2.npy")
+    plt.imshow(rgb_int)
+    plt.show()
+    print(f"first read rgb : {rgb_int.min()}, {rgb_int.max()}, {rgb_int.dtype}")
+    rgb = torch.from_numpy(rgb_int).permute(2, 0, 1).float().to(device)  # Convert to tensor and normalize 
     if rgb.max() > 1.0:
         rgb = rgb / 255.0  # Normalize to [0, 1] if needed
     print(f"RGB image shape: {rgb.shape}, dtype: {rgb.dtype}")
 
     
-    depth = np.load("./output/debug_depthmap_Lille-150127_0485-11-00002_0000384.jpg_2.npy").reshape(-1, rgb.shape[1])
+    depth = np.load("./output/debug_depthmap_Lille-150127_0485-11-00002_0000384.jpg_2.npy").reshape(-1, rgb.shape[2])
     print(f"Depth image shape: {depth.shape}, dtype: {depth.dtype}")
+    
+    plt.imshow(depth)
+    plt.show()
+    
     depth = torch.from_numpy(depth).to(device)
 
+ 
 
     with open('/mast3r_ign/output/intrinsics.txt') as f:
         K = np.array(eval(f.read()))
@@ -73,17 +98,30 @@ def main():
     with open('/mast3r_ign/output/rot_copy.txt') as f:
         R = np.array(eval(f.read()))
         print(f"Camera rotation:\n{R} {type(R)}")
-        R = torch.from_numpy(R).float().to(device)
+        R = torch.from_numpy(R).double().to(device)  # Use float64 for better precision
+        
+        # Check if R is orthogonal
+        R_RTR = R @ R.T
+        print(f"R @ R.T (should be identity):\n{R_RTR}")
+        print(f"Max deviation from identity: {(R_RTR - torch.eye(3, device=device, dtype=torch.float64)).abs().max()}")
 
     with open('/mast3r_ign/output/trans.txt') as f:
         t = np.array(eval(f.read()))
         print(f"Camera translation:\\n{t} {type(t)}")
-        t = torch.from_numpy(t).float().to(device)
+        t = torch.from_numpy(t).double().to(device)  # Use float64
 
+    # Convert depth and K to float64 for better precision
+    depth = depth.double()
+    if not isinstance(K, torch.Tensor):
+        K = torch.from_numpy(K).double().to(device)
+    else:
+        K = K.double().to(device)
 
     points_w = depth_to_3d(depth, K, R, t, device=device)
     print(f"3D points shape: {points_w.shape}, dtype: {points_w.dtype}")
     Xg, Yg, DSM = points_w[..., 0], points_w[..., 1], points_w[..., 2]
+
+     
 
     verts, faces = build_dsm_mesh(Xg, Yg, DSM)
     # verts_uvs = build_uvs_from_projection(Xg, Yg, DSM, 
@@ -92,9 +130,23 @@ def main():
     verts_uvs = __build_uvs_from_projection(Xg, Yg, DSM, 
                                           R, t, K, depth.shape[0], depth.shape[1])
 
+     
     mesh = build_textured_mesh(verts, faces, verts_uvs, rgb)
-
-   
+    rgb_input = rgb_int[:, :, :3].astype("uint8")
+    # export_textured_obj_fixed(
+    #     verts=mesh.verts_packed(),
+    #     faces=mesh.faces_packed(),
+    #     verts_uvs=verts_uvs,
+    #     texture_image=rgb_input,
+    #     obj_path="./output/debug_mesh.obj",
+    #     texture_name="./output/texture.png"
+    #     )
+    export_ply(mesh, path="./output/debug_mesh_2.ply")    
+    # draw_textured_mesh_open3d(mesh_p3d=mesh,verts_uvs=verts_uvs,texture_image=rgb_input,)
+    
+    export_xyzrgb_points_to_ply(Xg, Yg, DSM, 255*rgb_int, path="./output/points_2.ply")
+    print(rgb_input.min(), rgb_input.max(), rgb_input.dtype)
+    
 
 
     # visualize_mesh_debug(mesh)
@@ -106,7 +158,7 @@ def main():
     camera = create_topdown_ortho_camera(Xmin, Xmax, Ymin, Ymax, DSM.min(), device="cuda")
     # to run this 
 
-    renderer = create_ortho_renderer(image_size=(500, 500), camera=camera)
+    renderer = create_ortho_renderer(image_size=(1000, 1000), camera=camera)
 
     ortho = render_ortho(mesh, renderer)
     print(f"Ortho image shape: {ortho.shape}, dtype: {ortho.dtype}")

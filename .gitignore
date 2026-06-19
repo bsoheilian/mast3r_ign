@@ -139,3 +139,24 @@ data/pano.jpg
 data/street_rect.jpg
 data/street.jpg
 data/street2.jpg
+output/trans.txt
+output/trans copy.txt
+output/texture.png
+output/rot.txt
+output/rot_copy.txt
+output/points_2.ply
+output/ortho.png
+output/mesh_debug.png
+output/mesh_debug.obj
+output/mesh_debug.mtl
+output/intrinsics.txt
+output/debug_rgb_Lille-150127_0485-11-00002_0000384.jpg.npy
+output/debug_rgb_Lille-150127_0485-11-00002_0000384.jpg_2.npy
+output/debug_output.txt
+output/debug_mesh.png
+output/debug_mesh.ply
+output/debug_mesh.obj
+output/debug_mesh.mtl
+output/debug_mesh_2.ply
+output/debug_depthmap_Lille-150127_0485-11-00002_0000384.jpg.npy
+output/debug_depthmap_Lille-150127_0485-11-00002_0000384.jpg_2.npy
