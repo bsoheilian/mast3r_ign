@@ -33,9 +33,9 @@ def depth_to_3d(depth, K, R, t, device='cuda'):
     print(f"depth shape: {depth.shape}, dtype: {depth.dtype}")
     u = torch.arange(W, device=device, dtype=depth.dtype)
     v = torch.arange(H, device=device, dtype=depth.dtype)
-    # u, v = torch.meshgrid(u, v, indexing='xy')
+    u, v = torch.meshgrid(u, v, indexing='xy')
     
-    u, v = torch.meshgrid(v, u, indexing='ij')  # <-- IMPORTANT FIX
+    # u, v = torch.meshgrid(v, u, indexing='ij')  # <-- IMPORTANT FIX
     
     # Convert K to torch tensor on device if needed
     if not isinstance(K, torch.Tensor):
@@ -74,6 +74,7 @@ def main():
     rgb_int = np.load("./output/debug_rgb_Lille-150127_0485-11-00002_0000384.jpg_2.npy")
     plt.imshow(rgb_int)
     plt.show()
+
     print(f"first read rgb : {rgb_int.min()}, {rgb_int.max()}, {rgb_int.dtype}")
     rgb = torch.from_numpy(rgb_int).permute(2, 0, 1).float().to(device)  # Convert to tensor and normalize 
     if rgb.max() > 1.0:
@@ -98,24 +99,28 @@ def main():
     with open('/mast3r_ign/output/rot_copy.txt') as f:
         R = np.array(eval(f.read()))
         print(f"Camera rotation:\n{R} {type(R)}")
-        R = torch.from_numpy(R).double().to(device)  # Use float64 for better precision
+        # R = torch.from_numpy(R).double().to(device)  # Use float64 for better precision
+        R = torch.from_numpy(R).float().to(device)  # Use float64 for better precision
         
-        # Check if R is orthogonal
-        R_RTR = R @ R.T
-        print(f"R @ R.T (should be identity):\n{R_RTR}")
-        print(f"Max deviation from identity: {(R_RTR - torch.eye(3, device=device, dtype=torch.float64)).abs().max()}")
+        # # Check if R is orthogonal
+        # R_RTR = R @ R.T
+        # print(f"R @ R.T (should be identity):\n{R_RTR}")
+        # print(f"Max deviation from identity: {(R_RTR - torch.eye(3, device=device, dtype=torch.float64)).abs().max()}")
 
     with open('/mast3r_ign/output/trans.txt') as f:
         t = np.array(eval(f.read()))
         print(f"Camera translation:\\n{t} {type(t)}")
-        t = torch.from_numpy(t).double().to(device)  # Use float64
+        # t = torch.from_numpy(t).double().to(device)  # Use float64
+        t = torch.from_numpy(t).float().to(device)  # Use float64
 
     # Convert depth and K to float64 for better precision
-    depth = depth.double()
+    # depth = depth.double()
     if not isinstance(K, torch.Tensor):
-        K = torch.from_numpy(K).double().to(device)
+        # K = torch.from_numpy(K).double().to(device)
+        K = torch.from_numpy(K).float().to(device)
     else:
-        K = K.double().to(device)
+        # K = K.double().to(device)
+        K = K.float().to(device)
 
     points_w = depth_to_3d(depth, K, R, t, device=device)
     print(f"3D points shape: {points_w.shape}, dtype: {points_w.dtype}")
