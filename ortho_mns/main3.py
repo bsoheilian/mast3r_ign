@@ -72,8 +72,8 @@ def main():
     import matplotlib.pyplot as plt
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     rgb_int = np.load("./output/debug_rgb_Lille-150127_0485-11-00002_0000384.jpg_2.npy")
-    plt.imshow(rgb_int)
-    plt.show()
+    # plt.imshow(rgb_int)
+    # plt.show()
 
     print(f"first read rgb : {rgb_int.min()}, {rgb_int.max()}, {rgb_int.dtype}")
     rgb = torch.from_numpy(rgb_int).permute(2, 0, 1).float().to(device)  # Convert to tensor and normalize 
@@ -85,8 +85,8 @@ def main():
     depth = np.load("./output/debug_depthmap_Lille-150127_0485-11-00002_0000384.jpg_2.npy").reshape(-1, rgb.shape[2])
     print(f"Depth image shape: {depth.shape}, dtype: {depth.dtype}")
     
-    plt.imshow(depth)
-    plt.show()
+    # plt.imshow(depth)
+    # plt.show()
     
     depth = torch.from_numpy(depth).to(device)
 
