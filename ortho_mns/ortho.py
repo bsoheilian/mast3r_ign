@@ -116,19 +116,31 @@ def create_topdown_ortho_camera(Xmin, Xmax, Ymin, Ymax, Zmin, device):
         py = 0.5
     else : 
         # Use custom parameters for orthographic camera
-        cx = (Xmin + Xmax) / 2
-        cy = (Ymin + Ymax) / 2
-        cz = Zmin + 20.  # Place camera below the mesh
-        cx = -2.11
-        cy = 0.13
+        # cx = (Xmin + Xmax) / 2
+        # cy = (Ymin + Ymax) / 2
+        # cz = Zmin + 20.  # Place camera below the mesh
+        # print(f"Camera position: ({cx:.2f}, {cy:.2f}, {cz:.2f})")
+        # cx = -2.11
+        # cy = 0.13
+        # cz = 1.0
+        
+        # this is the coordinate on the ground plane that the camera is looking at (the center of the ortho rectification)
+        cx = -3.0
+        cy = 5.0
         cz = 1.0
+        # the above center together with R = torch.tensor([[-1,  0,  0],[0, 1,  0],[0,  0, 1]], device=device, dtype=torch.float32)
+        #lead to a good looking ortho
+
+
+        R_x = torch.tensor([[1,  0,  0],[0, -1,  0],[0,  0, -1]], device=device, dtype=torch.float32)
+        R_z = torch.tensor([[-1, 0, 0],[0,-1, 0],[0, 0, 1]],device=device, dtype=torch.float32)
+        R = (R_z @ R_x)
         
-        R = torch.tensor([[1,  0,  0],[0, 1,  0],[0,  0, 1]], device=device, dtype=torch.float32)
-        
+
         print(f"Camera rotation:\n{R} {type(R)}, shape: {R.shape}")
         C = torch.tensor([cx, cy, cz], device=device, dtype=torch.float32)
         # T = -C.unsqueeze(0) 
-        T = torch.matmul(R, 1.0*C)
+        T = -1*torch.matmul(R, 1.0*C)
         # T = C
         # T = T.unsqueeze(0)
         R = R.unsqueeze(0)  # Add batch dimension
