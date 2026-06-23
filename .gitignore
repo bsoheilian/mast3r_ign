@@ -129,3 +129,9 @@ dmypy.json
 .pyre/
 docker/files/checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth
 docker/files/checkpoints/checkpoint-aerial-mast3r.pth
+debug_render.png
+output/debug_mesh_2.ply
+output/*
+*.png
+*.jpg
+
