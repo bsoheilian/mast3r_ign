@@ -160,3 +160,5 @@ output/debug_mesh.mtl
 output/debug_mesh_2.ply
 output/debug_depthmap_Lille-150127_0485-11-00002_0000384.jpg.npy
 output/debug_depthmap_Lille-150127_0485-11-00002_0000384.jpg_2.npy
+debug_render.png
+output/*
