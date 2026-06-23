@@ -1,7 +1,7 @@
 from render import create_debug_renderer, export_ply, export_textured_obj_fixed, export_xyzrgb_points_to_ply
 import torch
 import numpy as np
-from ortho import build_dsm_mesh, build_uvs_from_projection, build_textured_mesh, create_topdown_ortho_camera, create_ortho_renderer, draw_textured_mesh_open3d, render_ortho
+from ortho import build_dsm_mesh, build_uvs_from_projection, build_textured_mesh, create_topdown_ortho_camera, create_ortho_renderer, draw_textured_mesh_open3d, render_ortho, write_rgb_vrt, write_rgb_vrt_qgis_safe
 from ortho import __build_uvs_from_projection
 try:
     from pytorch3d.structures import Meshes
@@ -15,7 +15,7 @@ try:
 except ImportError:
     HAS_PYTORCH3D = False
 
-def depth_to_3d(depth, K, R, t, device='cuda'):
+def depth_to_3d(depth, K, R, t, device='cuda', scale_factor=1.0):
     """
     Convert depth map to 3D points in world coordinates.
     
@@ -25,6 +25,7 @@ def depth_to_3d(depth, K, R, t, device='cuda'):
         R: (3, 3) tensor, rotation matrix (camera to world).
         t: (3,) tensor, translation vector (camera to world).
         device: str, device to use for computation.
+        scale_factor: float, factor to scale the depth values.
     
     Returns:
         points_world: (H, W, 3) tensor, 3D points in world coordinates.
@@ -44,7 +45,7 @@ def depth_to_3d(depth, K, R, t, device='cuda'):
         K = K.to(device).to(dtype=depth.dtype)
     
     # Backproject to camera coordinates
-    Z = depth.to(device).to(dtype=depth.dtype)
+    Z = depth.to(device).to(dtype=depth.dtype) * scale_factor   
     X = (u - K[0, 2]) * Z / K[0, 0]
     Y = (v - K[1, 2]) * Z / K[1, 1]
     points_cam = torch.stack([X, Y, Z], dim=-1)  # (H, W, 3)
@@ -122,7 +123,7 @@ def main():
         # K = K.double().to(device)
         K = K.float().to(device)
 
-    points_w = depth_to_3d(depth, K, R, t, device=device)
+    points_w = depth_to_3d(depth, K, R, t, device=device, scale_factor=2.5)
     print(f"3D points shape: {points_w.shape}, dtype: {points_w.dtype}")
     Xg, Yg, DSM = points_w[..., 0], points_w[..., 1], points_w[..., 2]
 
@@ -163,14 +164,41 @@ def main():
     camera = create_topdown_ortho_camera(Xmin, Xmax, Ymin, Ymax, DSM.min(), device="cuda")
     # to run this 
 
-    renderer = create_ortho_renderer(image_size=(1000, 1000), camera=camera)
+    gsd = 0.1
+    dx= Xmax - Xmin
+    dy = Ymax - Ymin
+    res_x = int(np.ceil(dx / gsd))
+    res_y = int(np.ceil(dy / gsd))
+    print(f"Orthographic image resolution: {res_x} x {res_y}")
+    renderer = create_ortho_renderer(image_size=(res_y, res_x), camera=camera)
 
     ortho = render_ortho(mesh, renderer)
+
     print(f"Ortho image shape: {ortho.shape}, dtype: {ortho.dtype}")
 
     import matplotlib.pyplot as plt
     plt.imshow(ortho.cpu().numpy())
     plt.show()
+    
+    # Save ortho to PNG file
+    from PIL import Image
+    ortho_np = ortho.cpu().numpy()
+    if ortho_np.ndim == 3 and ortho_np.shape[0] == 3:
+        ortho_np = (ortho_np.transpose(1, 2, 0) * 255).astype(np.uint8)
+    elif ortho_np.max() <= 1.0:
+        ortho_np = (ortho_np * 255).astype(np.uint8)
+    ortho_path = "./output/ortho.png"
+    Image.fromarray(ortho_np).save(ortho_path)
+
+    with open('/mast3r_ign/output/trans_copy.txt') as f:
+        _translation = np.array(eval(f.read()))
+        print(f"Camera translation:\\n{_translation} {type(_translation)}")
+        # t = torch.from_numpy(t).double().to(device)  # Use float64
+        #_translation = torch.from_numpy(_translation).float().to(device)  # Use float64
+    ortho_path = "/home/BSoheilian/work/dev/mast3r_0ign/output/ortho.png"
+    # write_rgb_vrt("./output/ortho.vrt", ortho_path, res_x,res_y, Xmin+_translation[0], Ymax+_translation[1], gsd, gsd, epsg="EPSG:2154")
+    write_rgb_vrt_qgis_safe("./output/ortho.vrt", ortho_path, res_x,res_y, Xmin+_translation[0], Ymin+_translation[1], gsd, epsg="EPSG:2154")
+
 
 
 if __name__ == "__main__":

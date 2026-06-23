@@ -116,18 +116,18 @@ def create_topdown_ortho_camera(Xmin, Xmax, Ymin, Ymax, Zmin, device):
         py = 0.5
     else : 
         # Use custom parameters for orthographic camera
-        # cx = (Xmin + Xmax) / 2
-        # cy = (Ymin + Ymax) / 2
-        # cz = Zmin + 20.  # Place camera below the mesh
+        cx = (Xmin + Xmax) / 2
+        cy = (Ymin + Ymax) / 2
+        cz = Zmin + 20.  # Place camera below the mesh
         # print(f"Camera position: ({cx:.2f}, {cy:.2f}, {cz:.2f})")
         # cx = -2.11
         # cy = 0.13
         # cz = 1.0
         
         # this is the coordinate on the ground plane that the camera is looking at (the center of the ortho rectification)
-        cx = -3.0
-        cy = 5.0
-        cz = 1.0
+        # cx = -3.0
+        # cy = 5.0
+        # cz = 1.0
         # the above center together with R = torch.tensor([[-1,  0,  0],[0, 1,  0],[0,  0, 1]], device=device, dtype=torch.float32)
         #lead to a good looking ortho
 
@@ -147,7 +147,7 @@ def create_topdown_ortho_camera(Xmin, Xmax, Ymin, Ymax, Zmin, device):
         T = T.unsqueeze(0)  # Add batch dimension
         gsd = 0.1
         scale_x = 2.0/(Xmax - Xmin) 
-        scale_y = 2.0/(Ymax - Ymin)
+        #scale_y = 2.0/(Ymax - Ymin)
         px = 0.0
         py = 0.0
         gsd = 0.1  # Ground Sample Distance in world units per pixel    
@@ -158,7 +158,7 @@ def create_topdown_ortho_camera(Xmin, Xmax, Ymin, Ymax, Zmin, device):
         device=device,
         R=R,
         T=T,
-        focal_length=((scale_x, scale_y),),
+        focal_length=((scale_x, scale_x),),
         principal_point=((px,py),),
         image_size=((H, W),)
 
@@ -242,3 +242,155 @@ def draw_textured_mesh_open3d(
         [mesh_o3d],
         mesh_show_back_face=show_back_faces
     )
+
+
+from xml.etree.ElementTree import Element, SubElement, tostring
+from xml.dom import minidom
+
+
+def write_rgb_vrt(
+    vrt_path: str,
+    image_path: str,
+    width: int,
+    height: int,
+    top_left_x: float,
+    top_left_y: float,
+    pixel_size_x: float,
+    pixel_size_y: float,
+    epsg: str = "EPSG:4326"
+):
+    """
+    Create a Geo-referenced RGB VRT for an orthophoto.
+
+    Parameters
+    ----------
+    vrt_path : str
+        Output .vrt file path
+    image_path : str
+        Path to RGB image (tif/png/jpg)
+    width : int
+        Image width in pixels
+    height : int
+        Image height in pixels
+    top_left_x : float
+        X coordinate of top-left pixel (ground CRS)
+    top_left_y : float
+        Y coordinate of top-left pixel (ground CRS)
+    pixel_size_x : float
+        Ground resolution in X direction
+    pixel_size_y : float
+        Ground resolution in Y direction (usually negative)
+    epsg : str
+        CRS definition (e.g., "EPSG:2154")
+    """
+
+    # Ensure north-up convention
+    # pixel_size_y should typically be negative
+    gt = [
+        top_left_x,
+        pixel_size_x,
+        0,
+        top_left_y,
+        0,
+        pixel_size_y
+    ]
+
+    vrt = Element("VRTDataset", rasterXSize=str(width), rasterYSize=str(height))
+
+    # CRS
+    srs = SubElement(vrt, "SRS")
+    srs.text = epsg
+
+    # GeoTransform
+    geotransform = SubElement(vrt, "GeoTransform")
+    geotransform.text = ", ".join(map(str, gt))
+
+    # RGB bands (1,2,3)
+    for band_id in [1, 2, 3]:
+        band = SubElement(vrt, "VRTRasterBand", dataType="Byte", band=str(band_id))
+
+        simple_source = SubElement(band, "SimpleSource")
+
+        src_file = SubElement(simple_source, "SourceFilename", relativeToVRT="1")
+        src_file.text = image_path
+
+        src_band = SubElement(simple_source, "SourceBand")
+        src_band.text = str(band_id)
+
+        src_rect = SubElement(simple_source, "SrcRect", {
+            "xOff": "0",
+            "yOff": "0",
+            "xSize": str(width),
+            "ySize": str(height)
+        })
+
+        dst_rect = SubElement(simple_source, "DstRect", {
+            "xOff": "0",
+            "yOff": "0",
+            "xSize": str(width),
+            "ySize": str(height)
+        })
+
+    # Pretty print XML
+    xml_str = minidom.parseString(tostring(vrt)).toprettyxml(indent="  ")
+
+    with open(vrt_path, "w") as f:
+        f.write(xml_str)
+
+    print(f"VRT written to: {vrt_path}")
+
+
+def write_rgb_vrt_qgis_safe(
+    vrt_path,
+    image_path,
+    width,
+    height,
+    xmin,
+    ymin,
+    pixel_size,
+    epsg="EPSG:2154",
+    origin="bottom_left"  # <-- IMPORTANT FIX
+    ):
+    from xml.etree.ElementTree import Element, SubElement, tostring
+    from xml.dom import minidom
+
+    dx = pixel_size
+    dy = -pixel_size
+
+    # handle origin properly
+    if origin == "top_left":
+        ymax = ymin
+    elif origin == "bottom_left":
+        ymax = ymin + height * pixel_size
+    else:
+        raise ValueError("origin must be 'top_left' or 'bottom_left'")
+
+    gt = [xmin, dx, 0, ymax, 0, dy]
+
+    vrt = Element("VRTDataset", rasterXSize=str(width), rasterYSize=str(height))
+
+    srs = SubElement(vrt, "SRS")
+    srs.text = epsg
+
+    geotransform = SubElement(vrt, "GeoTransform")
+    geotransform.text = ", ".join(map(str, gt))
+
+    for b in [1, 2, 3]:
+        band = SubElement(vrt, "VRTRasterBand", dataType="Byte", band=str(b))
+        src = SubElement(band, "SimpleSource")
+
+        fn = SubElement(src, "SourceFilename", relativeToVRT="1")
+        fn.text = image_path
+
+        sb = SubElement(src, "SourceBand")
+        sb.text = str(b)
+
+        SubElement(src, "SrcRect", xOff="0", yOff="0", xSize=str(width), ySize=str(height))
+        SubElement(src, "DstRect", xOff="0", yOff="0", xSize=str(width), ySize=str(height))
+
+    xml_str = minidom.parseString(tostring(vrt)).toprettyxml(indent="  ")
+
+    with open(vrt_path, "w") as f:
+        f.write(xml_str)
+
+    print("VRT written:", vrt_path)
