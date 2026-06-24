@@ -125,6 +125,57 @@ class Orientation:
         projected = self._K @ points
         return (projected[0] / projected[2], projected[1] / projected[2], projected[2])
 
+    def apply_ext(self,
+                  x: Union[np.ndarray, torch.Tensor, float],
+                  y: Union[np.ndarray, torch.Tensor, float],
+                  z: Union[np.ndarray, torch.Tensor, float],
+                  direction: str = "cam2world") -> tuple:
+        """
+        Apply extrinsics (R, C) in either direction.
+
+        Args:
+            x: Xcam if cam2world, Xworld if world2cam
+            y: Ycam if cam2world, Yworld if world2cam
+            z: Zcam if cam2world, Zworld if world2cam
+            direction: "cam2world" or "world2cam"
+
+        Returns:
+            "cam2world": (Xworld, Yworld, Zworld)
+            "world2cam": (Xcam, Ycam, Zcam)
+        """
+        if direction not in ("cam2world", "world2cam"):
+            raise ValueError(f"direction must be 'cam2world' or 'world2cam', got '{direction}'")
+
+        is_torch = isinstance(x, torch.Tensor) or isinstance(y, torch.Tensor) or isinstance(z, torch.Tensor)
+
+        if is_torch:
+            x = torch.atleast_1d(torch.as_tensor(x))
+            y = torch.atleast_1d(torch.as_tensor(y))
+            z = torch.atleast_1d(torch.as_tensor(z))
+
+            points = torch.stack([x, y, z])
+            R = torch.from_numpy(self._R).to(x.dtype).to(x.device)
+            C = torch.from_numpy(self._C).to(x.dtype).to(x.device).reshape(3, 1)
+
+            if direction == "cam2world":
+                out = torch.linalg.inv(R) @ points + C
+            else:
+                out = R @ (points - C)
+            return (out[0], out[1], out[2])
+
+        x = np.atleast_1d(x)
+        y = np.atleast_1d(y)
+        z = np.atleast_1d(z)
+
+        points = np.array([x, y, z])
+        C = np.asarray(self._C).reshape(3, 1)
+
+        if direction == "cam2world":
+            out = np.linalg.inv(self._R) @ points + C
+        else:
+            out = self._R @ (points - C)
+        return (out[0], out[1], out[2])
+
 
 if __name__ == "__main__":
     # Create test matrices
@@ -136,34 +187,68 @@ if __name__ == "__main__":
     ], dtype=np.float32)
     
     R = np.array([
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 0.0, 1.0]
+        [0.9998, -0.0175, 0.0090],
+        [0.0176, 0.9998, -0.0045],
+        [-0.0089, 0.0047, 0.9999]
     ], dtype=np.float64)
-    
-    C = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+
+    C = np.array([1.2, -0.8, 0.5], dtype=np.float32)
     
     # Initialize Orientation with ndarrays
     ori = Orientation.from_arrays(K, R, C)
     print("Orientation initialized successfully")
     
-    # Round-trip test with numpy inputs: img -> cam -> img
+    # Round-trip A with numpy inputs: img -> cam -> world -> cam -> img
     u_np = np.array([320.0, 640.0])
     v_np = np.array([240.0, 480.0])
     depth_np = np.array([2.0, 3.0])
-    
+
     Xcam_np, Ycam_np, Zcam_np = ori.apply_K(u_np, v_np, depth_np, direction="img2cam")
-    u_np_rt, v_np_rt, depth_np_rt = ori.apply_K(Xcam_np, Ycam_np, Zcam_np, direction="cam2img")
+    Xworld_np, Yworld_np, Zworld_np = ori.apply_ext(Xcam_np, Ycam_np, Zcam_np, direction="cam2world")
+    Xcam_np_rt, Ycam_np_rt, Zcam_np_rt = ori.apply_ext(Xworld_np, Yworld_np, Zworld_np, direction="world2cam")
+    u_np_rt, v_np_rt, depth_np_rt = ori.apply_K(Xcam_np_rt, Ycam_np_rt, Zcam_np_rt, direction="cam2img")
 
     du_np = np.max(np.abs(u_np_rt - u_np))
     dv_np = np.max(np.abs(v_np_rt - v_np))
     dd_np = np.max(np.abs(depth_np_rt - depth_np))
-    print(f"Numpy max abs diff: du={du_np}, dv={dv_np}, ddepth={dd_np}")
+    dXcam_np_rt = np.max(np.abs(Xcam_np_rt - Xcam_np))
+    dYcam_np_rt = np.max(np.abs(Ycam_np_rt - Ycam_np))
+    dZcam_np_rt = np.max(np.abs(Zcam_np_rt - Zcam_np))
+    print(f"Numpy round-trip A max abs diff: du={du_np}, dv={dv_np}, ddepth={dd_np}, dXcam={dXcam_np_rt}, dYcam={dYcam_np_rt}, dZcam={dZcam_np_rt}")
+    assert np.allclose(Xcam_np_rt, Xcam_np, rtol=1e-6, atol=1e-6)
+    assert np.allclose(Ycam_np_rt, Ycam_np, rtol=1e-6, atol=1e-6)
+    assert np.allclose(Zcam_np_rt, Zcam_np, rtol=1e-6, atol=1e-6)
     assert np.allclose(u_np_rt, u_np, rtol=1e-6, atol=1e-6)
     assert np.allclose(v_np_rt, v_np, rtol=1e-6, atol=1e-6)
     assert np.allclose(depth_np_rt, depth_np, rtol=1e-6, atol=1e-6)
+
+    # Round-trip B with numpy inputs: world -> cam -> img -> cam -> world
+    Xworld_seed_np = np.array([1.0, 2.0])
+    Yworld_seed_np = np.array([0.5, -1.0])
+    Zworld_seed_np = np.array([6.0, 8.0])
+
+    Xcam_from_world_np, Ycam_from_world_np, Zcam_from_world_np = ori.apply_ext(
+        Xworld_seed_np, Yworld_seed_np, Zworld_seed_np, direction="world2cam"
+    )
+    u_from_world_np, v_from_world_np, depth_from_world_np = ori.apply_K(
+        Xcam_from_world_np, Ycam_from_world_np, Zcam_from_world_np, direction="cam2img"
+    )
+    Xcam_from_img_np, Ycam_from_img_np, Zcam_from_img_np = ori.apply_K(
+        u_from_world_np, v_from_world_np, depth_from_world_np, direction="img2cam"
+    )
+    Xworld_back_np, Yworld_back_np, Zworld_back_np = ori.apply_ext(
+        Xcam_from_img_np, Ycam_from_img_np, Zcam_from_img_np, direction="cam2world"
+    )
+
+    dXw_np = np.max(np.abs(Xworld_back_np - Xworld_seed_np))
+    dYw_np = np.max(np.abs(Yworld_back_np - Yworld_seed_np))
+    dZw_np = np.max(np.abs(Zworld_back_np - Zworld_seed_np))
+    print(f"Numpy round-trip B max abs diff: dXworld={dXw_np}, dYworld={dYw_np}, dZworld={dZw_np}")
+    assert np.allclose(Xworld_back_np, Xworld_seed_np, rtol=1e-6, atol=1e-6)
+    assert np.allclose(Yworld_back_np, Yworld_seed_np, rtol=1e-6, atol=1e-6)
+    assert np.allclose(Zworld_back_np, Zworld_seed_np, rtol=1e-6, atol=1e-6)
     
-    # Round-trip test with torch CUDA inputs: img -> cam -> img
+    # Round-trip tests with torch CUDA inputs + numpy-vs-torch checks at each step
     if torch.cuda.is_available():
         device = torch.device("cuda")
         # Use float64 to make strict 1e-6 round-trip checks numerically stable on CUDA.
@@ -172,16 +257,31 @@ if __name__ == "__main__":
         depth_torch = torch.tensor([2.0, 3.0], device=device, dtype=torch.float64)
 
         Xcam_torch, Ycam_torch, Zcam_torch = ori.apply_K(u_torch, v_torch, depth_torch, direction="img2cam")
-        u_torch_rt, v_torch_rt, depth_torch_rt = ori.apply_K(Xcam_torch, Ycam_torch, Zcam_torch, direction="cam2img")
+        Xworld_torch, Yworld_torch, Zworld_torch = ori.apply_ext(Xcam_torch, Ycam_torch, Zcam_torch, direction="cam2world")
+        Xcam_torch_rt, Ycam_torch_rt, Zcam_torch_rt = ori.apply_ext(Xworld_torch, Yworld_torch, Zworld_torch, direction="world2cam")
+        u_torch_rt, v_torch_rt, depth_torch_rt = ori.apply_K(Xcam_torch_rt, Ycam_torch_rt, Zcam_torch_rt, direction="cam2img")
 
         du_torch = torch.max(torch.abs(u_torch_rt - u_torch)).item()
         dv_torch = torch.max(torch.abs(v_torch_rt - v_torch)).item()
         dd_torch = torch.max(torch.abs(depth_torch_rt - depth_torch)).item()
-        print(f"Torch CUDA max abs diff: du={du_torch}, dv={dv_torch}, ddepth={dd_torch}")
+        dXcam_torch_rt = torch.max(torch.abs(Xcam_torch_rt - Xcam_torch)).item()
+        dYcam_torch_rt = torch.max(torch.abs(Ycam_torch_rt - Ycam_torch)).item()
+        dZcam_torch_rt = torch.max(torch.abs(Zcam_torch_rt - Zcam_torch)).item()
+        print(f"Torch CUDA round-trip A max abs diff: du={du_torch}, dv={dv_torch}, ddepth={dd_torch}, dXcam={dXcam_torch_rt}, dYcam={dYcam_torch_rt}, dZcam={dZcam_torch_rt}")
 
         Xcam_torch_np = Xcam_torch.detach().cpu().numpy()
         Ycam_torch_np = Ycam_torch.detach().cpu().numpy()
         Zcam_torch_np = Zcam_torch.detach().cpu().numpy()
+        Xworld_torch_np = Xworld_torch.detach().cpu().numpy()
+        Yworld_torch_np = Yworld_torch.detach().cpu().numpy()
+        Zworld_torch_np = Zworld_torch.detach().cpu().numpy()
+        Xcam_torch_rt_np = Xcam_torch_rt.detach().cpu().numpy()
+        Ycam_torch_rt_np = Ycam_torch_rt.detach().cpu().numpy()
+        Zcam_torch_rt_np = Zcam_torch_rt.detach().cpu().numpy()
+        u_torch_rt_np = u_torch_rt.detach().cpu().numpy()
+        v_torch_rt_np = v_torch_rt.detach().cpu().numpy()
+        depth_torch_rt_np = depth_torch_rt.detach().cpu().numpy()
+
         dX_np_torch = np.max(np.abs(Xcam_np - Xcam_torch_np))
         dY_np_torch = np.max(np.abs(Ycam_np - Ycam_torch_np))
         dZ_np_torch = np.max(np.abs(Zcam_np - Zcam_torch_np))
@@ -190,13 +290,105 @@ if __name__ == "__main__":
         assert np.allclose(Ycam_np, Ycam_torch_np, rtol=1e-6, atol=1e-6)
         assert np.allclose(Zcam_np, Zcam_torch_np, rtol=1e-6, atol=1e-6)
 
+        dXw_np_torch = np.max(np.abs(Xworld_np - Xworld_torch_np))
+        dYw_np_torch = np.max(np.abs(Yworld_np - Yworld_torch_np))
+        dZw_np_torch = np.max(np.abs(Zworld_np - Zworld_torch_np))
+        print(f"Cam2world numpy-vs-torch max abs diff: dX={dXw_np_torch}, dY={dYw_np_torch}, dZ={dZw_np_torch}")
+        assert np.allclose(Xworld_np, Xworld_torch_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(Yworld_np, Yworld_torch_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(Zworld_np, Zworld_torch_np, rtol=1e-6, atol=1e-6)
+
+        dXc_rt_np_torch = np.max(np.abs(Xcam_np_rt - Xcam_torch_rt_np))
+        dYc_rt_np_torch = np.max(np.abs(Ycam_np_rt - Ycam_torch_rt_np))
+        dZc_rt_np_torch = np.max(np.abs(Zcam_np_rt - Zcam_torch_rt_np))
+        print(f"World2cam numpy-vs-torch max abs diff: dX={dXc_rt_np_torch}, dY={dYc_rt_np_torch}, dZ={dZc_rt_np_torch}")
+        assert np.allclose(Xcam_np_rt, Xcam_torch_rt_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(Ycam_np_rt, Ycam_torch_rt_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(Zcam_np_rt, Zcam_torch_rt_np, rtol=1e-6, atol=1e-6)
+
+        du_rt_np_torch = np.max(np.abs(u_np_rt - u_torch_rt_np))
+        dv_rt_np_torch = np.max(np.abs(v_np_rt - v_torch_rt_np))
+        dd_rt_np_torch = np.max(np.abs(depth_np_rt - depth_torch_rt_np))
+        print(f"Cam2img numpy-vs-torch max abs diff: du={du_rt_np_torch}, dv={dv_rt_np_torch}, ddepth={dd_rt_np_torch}")
+        assert np.allclose(u_np_rt, u_torch_rt_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(v_np_rt, v_torch_rt_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(depth_np_rt, depth_torch_rt_np, rtol=1e-6, atol=1e-6)
+
+        Xworld_seed_torch = torch.tensor([1.0, 2.0], device=device, dtype=torch.float64)
+        Yworld_seed_torch = torch.tensor([0.5, -1.0], device=device, dtype=torch.float64)
+        Zworld_seed_torch = torch.tensor([6.0, 8.0], device=device, dtype=torch.float64)
+
+        Xcam_from_world_torch, Ycam_from_world_torch, Zcam_from_world_torch = ori.apply_ext(
+            Xworld_seed_torch, Yworld_seed_torch, Zworld_seed_torch, direction="world2cam"
+        )
+        u_from_world_torch, v_from_world_torch, depth_from_world_torch = ori.apply_K(
+            Xcam_from_world_torch, Ycam_from_world_torch, Zcam_from_world_torch, direction="cam2img"
+        )
+        Xcam_from_img_torch, Ycam_from_img_torch, Zcam_from_img_torch = ori.apply_K(
+            u_from_world_torch, v_from_world_torch, depth_from_world_torch, direction="img2cam"
+        )
+        Xworld_back_torch, Yworld_back_torch, Zworld_back_torch = ori.apply_ext(
+            Xcam_from_img_torch, Ycam_from_img_torch, Zcam_from_img_torch, direction="cam2world"
+        )
+
+        dXw_torch = torch.max(torch.abs(Xworld_back_torch - Xworld_seed_torch)).item()
+        dYw_torch = torch.max(torch.abs(Yworld_back_torch - Yworld_seed_torch)).item()
+        dZw_torch = torch.max(torch.abs(Zworld_back_torch - Zworld_seed_torch)).item()
+        print(f"Torch CUDA round-trip B max abs diff: dXworld={dXw_torch}, dYworld={dYw_torch}, dZworld={dZw_torch}")
+
+        assert torch.allclose(Xworld_back_torch, Xworld_seed_torch, rtol=1e-6, atol=1e-6)
+        assert torch.allclose(Yworld_back_torch, Yworld_seed_torch, rtol=1e-6, atol=1e-6)
+        assert torch.allclose(Zworld_back_torch, Zworld_seed_torch, rtol=1e-6, atol=1e-6)
+
+        Xcam_from_world_torch_np = Xcam_from_world_torch.detach().cpu().numpy()
+        Ycam_from_world_torch_np = Ycam_from_world_torch.detach().cpu().numpy()
+        Zcam_from_world_torch_np = Zcam_from_world_torch.detach().cpu().numpy()
+        u_from_world_torch_np = u_from_world_torch.detach().cpu().numpy()
+        v_from_world_torch_np = v_from_world_torch.detach().cpu().numpy()
+        depth_from_world_torch_np = depth_from_world_torch.detach().cpu().numpy()
+        Xcam_from_img_torch_np = Xcam_from_img_torch.detach().cpu().numpy()
+        Ycam_from_img_torch_np = Ycam_from_img_torch.detach().cpu().numpy()
+        Zcam_from_img_torch_np = Zcam_from_img_torch.detach().cpu().numpy()
+        Xworld_back_torch_np = Xworld_back_torch.detach().cpu().numpy()
+        Yworld_back_torch_np = Yworld_back_torch.detach().cpu().numpy()
+        Zworld_back_torch_np = Zworld_back_torch.detach().cpu().numpy()
+
+        print(
+            "Round-trip B numpy-vs-torch max abs diff: "
+            f"world2cam dX={np.max(np.abs(Xcam_from_world_np - Xcam_from_world_torch_np))}, "
+            f"dY={np.max(np.abs(Ycam_from_world_np - Ycam_from_world_torch_np))}, "
+            f"dZ={np.max(np.abs(Zcam_from_world_np - Zcam_from_world_torch_np))}; "
+            f"cam2img du={np.max(np.abs(u_from_world_np - u_from_world_torch_np))}, "
+            f"dv={np.max(np.abs(v_from_world_np - v_from_world_torch_np))}, "
+            f"ddepth={np.max(np.abs(depth_from_world_np - depth_from_world_torch_np))}; "
+            f"img2cam dX={np.max(np.abs(Xcam_from_img_np - Xcam_from_img_torch_np))}, "
+            f"dY={np.max(np.abs(Ycam_from_img_np - Ycam_from_img_torch_np))}, "
+            f"dZ={np.max(np.abs(Zcam_from_img_np - Zcam_from_img_torch_np))}; "
+            f"cam2world dX={np.max(np.abs(Xworld_back_np - Xworld_back_torch_np))}, "
+            f"dY={np.max(np.abs(Yworld_back_np - Yworld_back_torch_np))}, "
+            f"dZ={np.max(np.abs(Zworld_back_np - Zworld_back_torch_np))}"
+        )
+
+        assert np.allclose(Xcam_from_world_np, Xcam_from_world_torch_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(Ycam_from_world_np, Ycam_from_world_torch_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(Zcam_from_world_np, Zcam_from_world_torch_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(u_from_world_np, u_from_world_torch_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(v_from_world_np, v_from_world_torch_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(depth_from_world_np, depth_from_world_torch_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(Xcam_from_img_np, Xcam_from_img_torch_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(Ycam_from_img_np, Ycam_from_img_torch_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(Zcam_from_img_np, Zcam_from_img_torch_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(Xworld_back_np, Xworld_back_torch_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(Yworld_back_np, Yworld_back_torch_np, rtol=1e-6, atol=1e-6)
+        assert np.allclose(Zworld_back_np, Zworld_back_torch_np, rtol=1e-6, atol=1e-6)
+
         assert torch.allclose(u_torch_rt, u_torch, rtol=1e-6, atol=1e-6)
         assert torch.allclose(v_torch_rt, v_torch, rtol=1e-6, atol=1e-6)
         assert torch.allclose(depth_torch_rt, depth_torch, rtol=1e-6, atol=1e-6)
     else:
         print("CUDA not available: skipping torch CUDA round-trip test.")
 
-    print("Round-trip tests passed for numpy and torch.")
+    print("All K/ext round-trip and numpy-vs-torch tests passed.")
     
 
     
