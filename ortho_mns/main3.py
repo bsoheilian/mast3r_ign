@@ -108,7 +108,7 @@ def main():
         # print(f"R @ R.T (should be identity):\n{R_RTR}")
         # print(f"Max deviation from identity: {(R_RTR - torch.eye(3, device=device, dtype=torch.float64)).abs().max()}")
 
-    with open('/mast3r_ign/output/trans.txt') as f:
+    with open('/mast3r_ign/output/trans_copy.txt') as f:
         t = np.array(eval(f.read()))
         print(f"Camera translation:\\n{t} {type(t)}")
         # t = torch.from_numpy(t).double().to(device)  # Use float64
@@ -147,7 +147,7 @@ def main():
     #     obj_path="./output/debug_mesh.obj",
     #     texture_name="./output/texture.png"
     #     )
-    export_ply(mesh, path="./output/debug_mesh_2.ply")    
+    export_ply(mesh, path="./output/debug_mesh_2_Trans.ply")    
     # draw_textured_mesh_open3d(mesh_p3d=mesh,verts_uvs=verts_uvs,texture_image=rgb_input,)
     
     export_xyzrgb_points_to_ply(Xg, Yg, DSM, 255*rgb_int, path="./output/points_2.ply")
