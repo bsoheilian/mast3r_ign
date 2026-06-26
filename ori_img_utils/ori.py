@@ -73,7 +73,26 @@ class Orientation:
         R = np.loadtxt(R_path, dtype=np.float64)
         C = np.loadtxt(C_path, dtype=np.float32)
         
-        return cls(K, R, C)
+        return cls(K, R.T, C)
+    
+    def apply_K_torch(self, depth_img: np.ndarray, device: Union[str, torch.device] = "cuda"):
+        """
+        Apply intrinsics matrix K to a depth image to convert pixel coordinates to camera coordinates using PyTorch.
+        
+        Args:
+            depth_img: Depth image as a 2D numpy array (H, W)
+        
+        Returns:
+            Xcam, Ycam, Zcam: Camera coordinates as 2D numpy arrays (H, W)
+        """
+        H, W = depth_img.shape
+        u = torch.arange(W, device=device, dtype=torch.float64) # use float64 for better precision
+        v = torch.arange(H, device=device, dtype=torch.float64)
+        u, v = torch.meshgrid(u, v, indexing='xy')  # u: (H, W), v: (H, W)  
+        depth = torch.from_numpy(depth_img).to(device=device, dtype=torch.float64)
+        Xcam, Ycam, Zcam = self.apply_K(u, v, depth, direction="img2cam")
+        return Xcam, Ycam, Zcam
+
     
     def apply_K(self,
                 x: Union[np.ndarray, torch.Tensor, float],
@@ -100,30 +119,58 @@ class Orientation:
         is_torch = isinstance(x, torch.Tensor) or isinstance(y, torch.Tensor) or isinstance(z, torch.Tensor)
 
         if is_torch:
-            x = torch.atleast_1d(torch.as_tensor(x))
-            y = torch.atleast_1d(torch.as_tensor(y))
-            z = torch.atleast_1d(torch.as_tensor(z))
-            K = torch.from_numpy(self._K).to(x.dtype).to(x.device)
+            x = torch.as_tensor(x)
+            y = torch.as_tensor(y, device=x.device, dtype=x.dtype)
+            z = torch.as_tensor(z, device=x.device, dtype=x.dtype)
+            x, y, z = torch.broadcast_tensors(x, y, z)
+            orig_shape = x.shape
+
+            x_flat = x.reshape(-1)
+            y_flat = y.reshape(-1)
+            z_flat = z.reshape(-1)
+            K = torch.from_numpy(self._K).to(device=x.device, dtype=x.dtype)
 
             if direction == "img2cam":
-                pixels = torch.stack([x, y, torch.ones_like(x)])
+                pixels = torch.stack([x_flat, y_flat, torch.ones_like(x_flat)], dim=0)
                 normalized = torch.linalg.inv(K) @ pixels
-                return (normalized[0] * z, normalized[1] * z, normalized[2] * z)
-            points = torch.stack([x, y, z])
+                return (
+                    (normalized[0] * z_flat).reshape(orig_shape),
+                    (normalized[1] * z_flat).reshape(orig_shape),
+                    (normalized[2] * z_flat).reshape(orig_shape),
+                )
+            points = torch.stack([x_flat, y_flat, z_flat], dim=0)
             projected = K @ points
-            return (projected[0] / projected[2], projected[1] / projected[2], projected[2])
+            return (
+                (projected[0] / projected[2]).reshape(orig_shape),
+                (projected[1] / projected[2]).reshape(orig_shape),
+                projected[2].reshape(orig_shape),
+            )
 
-        x = np.atleast_1d(x)
-        y = np.atleast_1d(y)
-        z = np.atleast_1d(z)
+        x = np.asarray(x)
+        y = np.asarray(y)
+        z = np.asarray(z)
+        x, y, z = np.broadcast_arrays(x, y, z)
+        orig_shape = x.shape
+
+        x_flat = x.reshape(-1)
+        y_flat = y.reshape(-1)
+        z_flat = z.reshape(-1)
 
         if direction == "img2cam":
-            pixels = np.array([x, y, np.ones_like(x)])
+            pixels = np.stack([x_flat, y_flat, np.ones_like(x_flat)], axis=0)
             normalized = np.linalg.inv(self._K) @ pixels
-            return (normalized[0] * z, normalized[1] * z, normalized[2] * z)
-        points = np.array([x, y, z])
+            return (
+                (normalized[0] * z_flat).reshape(orig_shape),
+                (normalized[1] * z_flat).reshape(orig_shape),
+                (normalized[2] * z_flat).reshape(orig_shape),
+            )
+        points = np.stack([x_flat, y_flat, z_flat], axis=0)
         projected = self._K @ points
-        return (projected[0] / projected[2], projected[1] / projected[2], projected[2])
+        return (
+            (projected[0] / projected[2]).reshape(orig_shape),
+            (projected[1] / projected[2]).reshape(orig_shape),
+            projected[2].reshape(orig_shape),
+        )
 
     def apply_ext(self,
                   x: Union[np.ndarray, torch.Tensor, float],
@@ -149,32 +196,44 @@ class Orientation:
         is_torch = isinstance(x, torch.Tensor) or isinstance(y, torch.Tensor) or isinstance(z, torch.Tensor)
 
         if is_torch:
-            x = torch.atleast_1d(torch.as_tensor(x))
-            y = torch.atleast_1d(torch.as_tensor(y))
-            z = torch.atleast_1d(torch.as_tensor(z))
+            x = torch.as_tensor(x)
+            y = torch.as_tensor(y, device=x.device, dtype=x.dtype)
+            z = torch.as_tensor(z, device=x.device, dtype=x.dtype)
+            x, y, z = torch.broadcast_tensors(x, y, z)
+            orig_shape = x.shape
 
-            points = torch.stack([x, y, z])
-            R = torch.from_numpy(self._R).to(x.dtype).to(x.device)
-            C = torch.from_numpy(self._C).to(x.dtype).to(x.device).reshape(3, 1)
+            x_flat = x.reshape(-1)
+            y_flat = y.reshape(-1)
+            z_flat = z.reshape(-1)
+
+            points = torch.stack([x_flat, y_flat, z_flat], dim=0)
+            R = torch.from_numpy(self._R).to(device=x.device, dtype=x.dtype)
+            C = torch.from_numpy(np.asarray(self._C).reshape(3)).to(device=x.device, dtype=x.dtype).reshape(3, 1)
 
             if direction == "cam2world":
                 out = torch.linalg.inv(R) @ points + C
             else:
                 out = R @ (points - C)
-            return (out[0], out[1], out[2])
+            return (out[0].reshape(orig_shape), out[1].reshape(orig_shape), out[2].reshape(orig_shape))
 
-        x = np.atleast_1d(x)
-        y = np.atleast_1d(y)
-        z = np.atleast_1d(z)
+        x = np.asarray(x)
+        y = np.asarray(y)
+        z = np.asarray(z)
+        x, y, z = np.broadcast_arrays(x, y, z)
+        orig_shape = x.shape
 
-        points = np.array([x, y, z])
+        x_flat = x.reshape(-1)
+        y_flat = y.reshape(-1)
+        z_flat = z.reshape(-1)
+
+        points = np.stack([x_flat, y_flat, z_flat], axis=0)
         C = np.asarray(self._C).reshape(3, 1)
 
         if direction == "cam2world":
             out = np.linalg.inv(self._R) @ points + C
         else:
             out = self._R @ (points - C)
-        return (out[0], out[1], out[2])
+        return (out[0].reshape(orig_shape), out[1].reshape(orig_shape), out[2].reshape(orig_shape))
 
 
 if __name__ == "__main__":
@@ -387,6 +446,64 @@ if __name__ == "__main__":
         assert torch.allclose(depth_torch_rt, depth_torch, rtol=1e-6, atol=1e-6)
     else:
         print("CUDA not available: skipping torch CUDA round-trip test.")
+
+    # Grid-shape tests (H, W) to validate image-wide projection/backprojection paths.
+    Ht, Wt = 4, 5
+    uu_np, vv_np = np.meshgrid(np.arange(Wt, dtype=np.float64), np.arange(Ht, dtype=np.float64), indexing='xy')
+    depth_grid_np = 2.0 + 0.01 * uu_np + 0.02 * vv_np
+
+    Xg_np, Yg_np, Zg_np = ori.apply_K(uu_np, vv_np, depth_grid_np, direction="img2cam")
+    assert Xg_np.shape == (Ht, Wt)
+    assert Yg_np.shape == (Ht, Wt)
+    assert Zg_np.shape == (Ht, Wt)
+    assert np.isfinite(Xg_np).all() and np.isfinite(Yg_np).all() and np.isfinite(Zg_np).all()
+
+    uu_np_rt, vv_np_rt, dd_np_rt = ori.apply_K(Xg_np, Yg_np, Zg_np, direction="cam2img")
+    assert np.allclose(uu_np_rt, uu_np, rtol=1e-5, atol=1e-5)
+    assert np.allclose(vv_np_rt, vv_np, rtol=1e-5, atol=1e-5)
+    assert np.allclose(dd_np_rt, depth_grid_np, rtol=1e-5, atol=1e-5)
+
+    Xw_grid_np, Yw_grid_np, Zw_grid_np = ori.apply_ext(Xg_np, Yg_np, Zg_np, direction="cam2world")
+    Xc_grid_np_rt, Yc_grid_np_rt, Zc_grid_np_rt = ori.apply_ext(
+        Xw_grid_np, Yw_grid_np, Zw_grid_np, direction="world2cam"
+    )
+    assert np.allclose(Xc_grid_np_rt, Xg_np, rtol=1e-6, atol=1e-6)
+    assert np.allclose(Yc_grid_np_rt, Yg_np, rtol=1e-6, atol=1e-6)
+    assert np.allclose(Zc_grid_np_rt, Zg_np, rtol=1e-6, atol=1e-6)
+
+    if torch.cuda.is_available():
+        uu_t = torch.from_numpy(uu_np).to(device=device, dtype=torch.float64)
+        vv_t = torch.from_numpy(vv_np).to(device=device, dtype=torch.float64)
+        dd_t = torch.from_numpy(depth_grid_np).to(device=device, dtype=torch.float64)
+
+        Xg_t, Yg_t, Zg_t = ori.apply_K(uu_t, vv_t, dd_t, direction="img2cam")
+        assert Xg_t.shape == (Ht, Wt)
+        assert Yg_t.shape == (Ht, Wt)
+        assert Zg_t.shape == (Ht, Wt)
+        assert torch.isfinite(Xg_t).all() and torch.isfinite(Yg_t).all() and torch.isfinite(Zg_t).all()
+
+        uu_t_rt, vv_t_rt, dd_t_rt = ori.apply_K(Xg_t, Yg_t, Zg_t, direction="cam2img")
+        assert torch.allclose(uu_t_rt, uu_t, rtol=1e-6, atol=1e-6)
+        assert torch.allclose(vv_t_rt, vv_t, rtol=1e-6, atol=1e-6)
+        assert torch.allclose(dd_t_rt, dd_t, rtol=1e-6, atol=1e-6)
+
+        Xw_t, Yw_t, Zw_t = ori.apply_ext(Xg_t, Yg_t, Zg_t, direction="cam2world")
+        Xc_t_rt, Yc_t_rt, Zc_t_rt = ori.apply_ext(Xw_t, Yw_t, Zw_t, direction="world2cam")
+        assert torch.allclose(Xc_t_rt, Xg_t, rtol=1e-6, atol=1e-6)
+        assert torch.allclose(Yc_t_rt, Yg_t, rtol=1e-6, atol=1e-6)
+        assert torch.allclose(Zc_t_rt, Zg_t, rtol=1e-6, atol=1e-6)
+
+        Xk_t, Yk_t, Zk_t = ori.apply_K_torch(depth_grid_np, device=device)
+        assert Xk_t.shape == (Ht, Wt)
+        assert Yk_t.shape == (Ht, Wt)
+        assert Zk_t.shape == (Ht, Wt)
+    else:
+        Xk_cpu, Yk_cpu, Zk_cpu = ori.apply_K_torch(depth_grid_np, device="cpu")
+        assert Xk_cpu.shape == (Ht, Wt)
+        assert Yk_cpu.shape == (Ht, Wt)
+        assert Zk_cpu.shape == (Ht, Wt)
+
+    print("Grid-shape K/ext tests passed.")
 
     print("All K/ext round-trip and numpy-vs-torch tests passed.")
     
