@@ -129,6 +129,8 @@ def export_xyzrgb_points_to_ply(Xg, Yg, Zg, rgb, path="points_rgb.ply"):
 
     pts = np.stack([Xg, Yg, Zg], axis=-1).reshape(-1, 3)
     col = rgb.reshape(-1, 3)
+    print(f"Points shape: {pts.shape}, dtype: {pts.dtype}, min: {pts.min()}, max: {pts.max()}")
+    print(f"Colors shape: {col.shape}, dtype: {col.dtype}, min: {col.min()}, max: {col.max()}")
 
     mask = np.isfinite(pts).all(axis=1)
     pts = pts[mask]
