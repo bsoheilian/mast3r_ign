@@ -76,7 +76,7 @@ class Orientation:
         return cls(K, R.T, C) # Note: R is transposed to match the expected orientation
         # to do : make it possible to provide R and T in both directions (cam2world and world2cam) and handle accordingly
     
-    def apply_K_torch(self, depth_img: np.ndarray, device: Union[str, torch.device] = "cuda"):
+    def apply_K_torch(self, depth_img: np.ndarray, z_scale: float = 1.0, device: Union[str, torch.device] = "cuda"):
         """
         Apply intrinsics matrix K to a depth image to convert pixel coordinates to camera coordinates using PyTorch.
         
@@ -91,7 +91,7 @@ class Orientation:
         v = torch.arange(H, device=device, dtype=torch.float64)
         u, v = torch.meshgrid(u, v, indexing='xy')  # u: (H, W), v: (H, W)  
         depth = torch.from_numpy(depth_img).to(device=device, dtype=torch.float64)
-        Xcam, Ycam, Zcam = self.apply_K(u, v, depth, direction="img2cam")
+        Xcam, Ycam, Zcam = self.apply_K(u, v, depth, direction="img2cam", z_scale=z_scale)
         return Xcam, Ycam, Zcam
 
     
@@ -99,7 +99,8 @@ class Orientation:
                 x: Union[np.ndarray, torch.Tensor, float],
                 y: Union[np.ndarray, torch.Tensor, float],
                 z: Union[np.ndarray, torch.Tensor, float] = 1.0,
-                direction: str = "img2cam") -> tuple:
+                direction: str = "img2cam",
+                z_scale: float = 1.0) -> tuple:
         """
         Apply intrinsics matrix K in either direction.
 
@@ -128,7 +129,7 @@ class Orientation:
 
             x_flat = x.reshape(-1)
             y_flat = y.reshape(-1)
-            z_flat = z.reshape(-1)
+            z_flat = z.reshape(-1) * z_scale
             K = torch.from_numpy(self._K).to(device=x.device, dtype=x.dtype)
 
             if direction == "img2cam":
