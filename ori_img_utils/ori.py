@@ -73,7 +73,8 @@ class Orientation:
         R = np.loadtxt(R_path, dtype=np.float64)
         C = np.loadtxt(C_path, dtype=np.float32)
         
-        return cls(K, R.T, C)
+        return cls(K, R.T, C) # Note: R is transposed to match the expected orientation
+        # to do : make it possible to provide R and T in both directions (cam2world and world2cam) and handle accordingly
     
     def apply_K_torch(self, depth_img: np.ndarray, device: Union[str, torch.device] = "cuda"):
         """
