@@ -27,7 +27,7 @@ def main():
     # Load RGB and depth images
     rgb = np.load(rgb_path)  # Load RGB image With shape (H, W, 3)
     H, W, _ = rgb.shape
-    print(f"RGB image shape: {rgb.shape}, dtype: {rgb.dtype}, min: {rgb.min()}, max: {rgb.max()}")
+    print(f"RGB image shape: {rgb.shape}, dtype: {rgb.dtype}, min: {rgb.min()}, max: {rgb.max()}, type: {type(rgb)}")
     # plt.imshow(rgb)
     # plt.show()
     depth = np.load(depth_path)  # Load depth image With shape (HxW,)
@@ -41,7 +41,7 @@ def main():
     # depth = torch.from_numpy(depth).float().to(device)  
 
     # apply K
-    Xcam, Ycam, Zcam = ori.apply_K_torch(depth, device="cuda" if torch.cuda.is_available() else "cpu")
+    Xcam, Ycam, Zcam = ori.apply_K_torch(depth, z_scale=2.5, device="cuda" if torch.cuda.is_available() else "cpu")
     print(f"Xcam shape: {Xcam.shape}, Ycam shape: {Ycam.shape}, Zcam shape: {Zcam.shape}")
     print(f"Xcam type: {Xcam.dtype}, Ycam type: {Ycam.dtype}, Zcam type: {Zcam.dtype}")
 
