@@ -38,6 +38,7 @@ class TexturedMesh3D:
         Zg = Zg.to(self.device)
         
         # Convert rgb_image numpy array to torch tensor and move to CUDA
+        # todo the type should already torch or ndarray otherwise transformed
         if isinstance(rgb_image, np.ndarray):
             rgb_image = torch.from_numpy(rgb_image).float().to(self.device)
         else:
