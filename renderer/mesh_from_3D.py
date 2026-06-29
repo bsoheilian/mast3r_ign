@@ -1,4 +1,13 @@
+import math
+
 import torch
+from pytorch3d.renderer import TexturesUV
+from pytorch3d.structures import Meshes
+from pytorch3d.renderer import OrthographicCameras
+from pytorch3d.renderer import (
+    MeshRenderer, MeshRasterizer,
+    RasterizationSettings, SoftPhongShader, AmbientLights
+)
 import numpy as np
 from typing import Tuple, Optional
 
@@ -41,8 +50,13 @@ class TexturedMesh3D:
         # todo the type should already torch or ndarray otherwise transformed
         if isinstance(rgb_image, np.ndarray):
             rgb_image = torch.from_numpy(rgb_image).float().to(self.device)
+            # Normalize rgb_image to [0, 1] range if values are in [0, 255]
+            if rgb_image.max() > 1.0:
+                rgb_image = rgb_image / 255.0
+            rgb_image = rgb_image.permute(2, 0, 1)  # Change shape to (3, H, W)
+            
         else:
-            rgb_image = rgb_image.to(self.device)
+            raise TypeError("rgb_image must be a numpy ndarray")
         
         assert Xg.dtype == torch.float64, "Xg must be torch.float64"
         assert Yg.dtype == torch.float64, "Yg must be torch.float64"
@@ -52,22 +66,33 @@ class TexturedMesh3D:
         H, W = Xg.shape
         assert Yg.shape == (H, W), "Yg shape must match Xg"
         assert Zg.shape == (H, W), "Zg shape must match Xg"
-        assert rgb_image.shape == (H, W, 3), "rgb_image shape must be (H, W, 3)"
+        assert rgb_image.shape == (3, H, W), "rgb_image shape must be (3, H, W)"
         
         self.H = H
         self.W = W
         self.Xg = Xg
         self.Yg = Yg
         self.Zg = Zg
+
+        self.Xmin, self.Xmax = Xg.min().item(), Xg.max().item()
+        self.Ymin, self.Ymax = Yg.min().item(), Yg.max().item()
+        self.Zmin, self.Zmax = Zg.min().item(), Zg.max().item()
+        
+        
         self.rgb_image = rgb_image
         
         # Create mesh vertices and faces
-        self._create_mesh()
+        self._create_mesh_texture_indexes()
+
+        # Create textured mesh
+        self._create_textured_mesh()
+        print(f"TexturedMesh3D initialized with mesh of {self.vertices.shape[0]} vertices and {self.faces.shape[0]} faces.")
+
         
         # Camera geometry (to be set via set_camera_geometry)
-        self.camera_geometry = None
+        # self.camera_geometry = None
     
-    def _create_mesh(self):
+    def _create_mesh_texture_indexes(self):
         """
         Create mesh vertices and faces from coordinate grids.
         
@@ -82,9 +107,11 @@ class TexturedMesh3D:
         # Stack to create (N, 3) vertices
         self.vertices = torch.stack([vertices_x, vertices_y, vertices_z], dim=1)  # Shape: (H*W, 3)
         
-        # Flatten RGB image to get vertex colors
-        self.vertex_colors = self.rgb_image.reshape(-1, 3)  # Shape: (H*W, 3)
-        
+        xs = torch.linspace(0, 1, self.W, device=self.device)
+        ys = torch.linspace(1, 0, self.H, device=self.device)  # flip Y for image coords
+        u, v = torch.meshgrid(xs, ys, indexing="xy")
+        self.verts_uvs = torch.stack([u, v], dim=-1).reshape(-1, 2)
+
         # Create faces by connecting adjacent grid points
         faces = []
         for i in range(self.H - 1):
@@ -99,70 +126,112 @@ class TexturedMesh3D:
                 faces.append([top_left, bottom_left, top_right])
                 faces.append([top_right, bottom_left, bottom_right])
         
-        self.faces = torch.tensor(faces, dtype=torch.long)  # Shape: (2*(H-1)*(W-1), 3)
+        self.faces = torch.tensor(faces, dtype=torch.long, device=self.device)  # Shape: (2*(H-1)*(W-1), 3)
     
-    def set_camera_geometry(self, camera_type: str, **kwargs):
+    def _create_textured_mesh(self):
+        textures = TexturesUV(
+            maps=self.rgb_image.unsqueeze(0),  # (1, 3, H, W)
+            verts_uvs=self.verts_uvs.unsqueeze(0),
+            faces_uvs=self.faces.unsqueeze(0)
+        )
+        self.mesh = Meshes(verts=[self.vertices], faces=[self.faces], textures=textures)
+
+    def _get_ortho_camera(self, gsd: float=0.1):
+        # C is the coordinate of the camera center in world coordinates. 
+        # For orthographic camera, we can place it above the mesh.
+        cx = (self.Xmin + self.Xmax) / 2
+        cy = (self.Ymin + self.Ymax) / 2
+        cz = self.Zmin + 10.  # Place camera above the mesh 
+        C = torch.tensor([cx, cy, cz], device=self.device, dtype=torch.float32)
+
+        # Define orthographic camera Rotation matrix 
+        # check the docs here to understand the rotation matrix for orthographic camera:
+        # https://pytorch3d.org/docs/cameras
+        # Xcam and Ycam axes are parallel to Xg and Yg axes, and Z axis is pointing downwards (towards the mesh)
+        # Xcam is in opposite direction of Xg, 
+        # Ycam is in direction of Yg, 
+        # Zcam is in opposite direction of Zg
+        R = torch.tensor([[-1., 0., 0.],
+                          [0., 1., 0.],
+                          [0., 0., -1.]], device=self.device, dtype=torch.float32)
+        
+        # the transformes are applied as RXg + T,  
+        # intuitially if a point is exactly beneath the camera Z axis
+        # its camera coordinates should be (0, 0, Zcam) where Zcam 
+        # so  0 = RXg + T => T = -RXg, so the translation vector is -R @ C
+        T = -R @ C
+        
+        #final R and T
+        R = R.unsqueeze(0)  # Add batch dimension
+        T = T.unsqueeze(0)  # Add batch dimension
+        
+        # scale is defined to scale the mesh to fit in the [-1, 1] range for rendering.
+        scale = 2.0/(max(self.Xmax - self.Xmin, self.Ymax - self.Ymin))  # Scale to fit in [-1, 1] range
+
+        # PPA no translation in x and y
+        px = py = 0.0  
+        
+        #image size is defined based on the GSD and the mesh extents
+        W = math.ceil((self.Xmax - self.Xmin) / gsd)
+        H = math.ceil((self.Ymax - self.Ymin) / gsd)
+
+        return OrthographicCameras(device=self.device, R=R, T=T,
+                                   focal_length=((scale, scale),),
+                                   principal_point=((px,py),),
+                                   image_size=((H, W),)
+                                   )
+
+    def _create_ortho_renderer(self, image_size, camera):
+        raster = RasterizationSettings(
+            image_size=image_size,
+            blur_radius=0.0,
+            faces_per_pixel=1,
+            bin_size=0,
+        )
+        device = camera.device
+        # Full ambient light so texture colors are rendered as-is without shading
+        lights = AmbientLights(device=device)
+
+        return MeshRenderer(
+            rasterizer=MeshRasterizer(
+                cameras=camera,
+                raster_settings=raster
+            ),
+            shader=SoftPhongShader(device=device, cameras=camera, lights=lights)
+        )
+    
+    def _render_ortho(self, mesh, renderer, show = False):
+        img = renderer(mesh)[0, ..., :3]
+        if show:
+            import matplotlib.pyplot as plt
+            plt.imshow(img.cpu().numpy())
+            plt.show()
+        return img
+    
+    def create_orth(self, gsd: float=0.1, show: bool=False):
         """
-        Set the camera geometry for rendering.
+        Create an orthographic view of the textured mesh.
         
         Args:
-            camera_type: Type of camera ('ortho' for orthographic, or other custom types)
-            **kwargs: Camera-specific parameters
-        """
-        if camera_type == 'ortho':
-            self.camera_geometry = self._create_ortho_camera(**kwargs)
-        else:
-            raise ValueError(f"Unsupported camera type: {camera_type}")
-    
-    def _create_ortho_camera(self, **kwargs) -> dict:
-        """
-        Create an orthographic camera geometry.
-        
-        Args:
-            **kwargs: Optional parameters like scale, offset, etc.
+            gsd: Ground Sample Distance (GSD) in world units per pixel.
+            show: If True, display the rendered image using matplotlib.
         
         Returns:
-            Dictionary containing orthographic camera parameters
+            img: Rendered orthographic image as a torch.Tensor of shape (H, W, 3).
         """
-        camera = {
-            'type': 'ortho',
-            'params': kwargs
-        }
-        return camera
+        camera = self._get_ortho_camera(gsd=gsd)
+        image_size = camera.image_size[0]  # returns (height, width)
+        renderer = self._create_ortho_renderer(image_size=image_size, camera=camera)
+        img = self._render_ortho(self.mesh, renderer, show=show)
+        return img
+
+
+
+
+
+
+
+
+
+  
     
-    def render(self, output_resolution: Optional[Tuple[int, int]] = None) -> torch.Tensor:
-        """
-        Render the mesh using the current camera geometry.
-        
-        Args:
-            output_resolution: Optional output resolution (H, W). Defaults to original image size.
-        
-        Returns:
-            Rendered image as torch.Tensor of shape (H, W, 3), dtype=torch.float32
-        """
-        if self.camera_geometry is None:
-            raise RuntimeError("Camera geometry not set. Call set_camera_geometry() first.")
-        
-        if output_resolution is None:
-            output_resolution = (self.H, self.W)
-        
-        # Placeholder for rendering logic
-        # This would typically involve:
-        # 1. Projecting mesh vertices using camera geometry
-        # 2. Rasterizing triangles
-        # 3. Interpolating vertex colors
-        
-        rendered_image = torch.zeros(*output_resolution, 3, dtype=torch.float32)
-        return rendered_image
-    
-    def get_vertices(self) -> torch.Tensor:
-        """Get mesh vertices."""
-        return self.vertices
-    
-    def get_faces(self) -> torch.Tensor:
-        """Get mesh faces."""
-        return self.faces
-    
-    def get_vertex_colors(self) -> torch.Tensor:
-        """Get vertex colors from RGB image."""
-        return self.vertex_colors

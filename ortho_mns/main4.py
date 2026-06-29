@@ -1,6 +1,7 @@
 
 import sys
-from render import export_xyzrgb_points_to_ply
+from render import export_ply, export_xyzrgb_points_to_ply
+
 import torch
 from pathlib import Path
 
@@ -11,7 +12,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ori_img_utils.ori import Orientation
-
+from renderer.mesh_from_3D import TexturedMesh3D
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     k_path = '/mast3r_ign/output/K.txt'
@@ -37,7 +38,7 @@ def main():
     # plt.show()
 
     #convert images to torch tensors
-    rgb = torch.from_numpy(rgb).permute(2, 0, 1).float().to(device) # Convert to torch tensor of shape (3, H, W)
+    # rgb = torch.from_numpy(rgb).permute(2, 0, 1).float().to(device) # Convert to torch tensor of shape (3, H, W)
     # depth = torch.from_numpy(depth).float().to(device)  
 
     # apply K
@@ -52,6 +53,15 @@ def main():
     Xg, Yg, Zg = ori.apply_ext(Xcam, Ycam, Zcam, direction="cam2world")
     print(f"Xg shape: {Xg.shape}, Yg shape: {Yg.shape}, Zg shape: {Zg.shape}")  
     export_xyzrgb_points_to_ply(Xg, Yg, Zg, 255*rgb_copy, path="./output/points_world_refactor.ply")
+    
+    mesh = TexturedMesh3D(Xg, Yg, Zg, rgb)
+    export_ply(mesh.mesh, path="./output/refactor_mesh.ply") 
+
+    mesh.create_orth(
+        gsd=0.1,
+        show=True
+    )
+
     
 
 
