@@ -2,20 +2,34 @@ version: '3.8'
 services:
   mast3r-demo:
     network_mode: host
+    entrypoint: ["bash"]
     build:
-      context: ./files
-      dockerfile: cuda.Dockerfile 
+      context: ../
+      dockerfile: docker/files/cuda.Dockerfile 
       network: host
+      args:
+        HTTP_PROXY: http://proxy.ign.fr:3128
+        HTTPS_PROXY: http://proxy.ign.fr:3128
+        http_proxy: http://proxy.ign.fr:3128
+        https_proxy: http://proxy.ign.fr:3128
     ports:
       - "7860:7860"
     environment:
       - DEVICE=cuda
       - MODEL=${MODEL:-MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth}
+      - HTTP_PROXY=http://proxy.ign.fr:3128
+      - HTTPS_PROXY=http://proxy.ign.fr:3128
+      - NO_PROXY=localhost,127.0.0.1,*.ign.fr
     volumes:
-      - ./files/checkpoints:/mast3r/checkpoints
+      - ../:/mast3r_ign
+      - ../../../data/chantier_lilles/:/mast3r_ign/data/chantier_lilles
+    devices:
+      - /dev/dri:/dev/dri
     cap_add:
       - IPC_LOCK
       - SYS_RESOURCE
+    gpus: all
+    # runtime: nvidia
     deploy:
       resources:
         reservations:
@@ -23,3 +37,4 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    
