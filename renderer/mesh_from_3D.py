@@ -53,7 +53,7 @@ class TexturedMesh3D:
             # Normalize rgb_image to [0, 1] range if values are in [0, 255]
             if rgb_image.max() > 1.0:
                 rgb_image = rgb_image / 255.0
-            rgb_image = rgb_image.permute(2, 0, 1)  # Change shape to (3, H, W)
+            # Keep channel-last layout (H, W, 3) for PyTorch3D TexturesUV maps
             
         else:
             raise TypeError("rgb_image must be a numpy ndarray")
@@ -66,7 +66,7 @@ class TexturedMesh3D:
         H, W = Xg.shape
         assert Yg.shape == (H, W), "Yg shape must match Xg"
         assert Zg.shape == (H, W), "Zg shape must match Xg"
-        assert rgb_image.shape == (3, H, W), "rgb_image shape must be (3, H, W)"
+        assert rgb_image.shape == (H, W, 3), "rgb_image shape must be (H, W, 3)"
         
         self.H = H
         self.W = W
@@ -77,6 +77,16 @@ class TexturedMesh3D:
         self.Xmin, self.Xmax = Xg.min().item(), Xg.max().item()
         self.Ymin, self.Ymax = Yg.min().item(), Yg.max().item()
         self.Zmin, self.Zmax = Zg.min().item(), Zg.max().item()
+        self.Xinsertion = self.Xmin
+        self.Yinsertion = self.Ymin 
+        self.Zinsertion = 0.0
+
+        # translate the double coordinates to float for rendering by subtracting Xmin and Ymin
+        self.Xg = (self.Xg - self.Xmin).float()
+        self.Yg = (self.Yg - self.Ymin).float() 
+        self.Zg = self.Zg.float()
+        self.Xmin, self.Xmax = 0, self.Xmax - self.Xmin
+        self.Ymin, self.Ymax = 0, self.Ymax - self.Ymin
         
         
         self.rgb_image = rgb_image
@@ -87,6 +97,7 @@ class TexturedMesh3D:
         # Create textured mesh
         self._create_textured_mesh()
         print(f"TexturedMesh3D initialized with mesh of {self.vertices.shape[0]} vertices and {self.faces.shape[0]} faces.")
+        print(f"Vertices dtype: {self.vertices.dtype}")  # Verify vertices are float32
 
         
         # Camera geometry (to be set via set_camera_geometry)
@@ -104,8 +115,8 @@ class TexturedMesh3D:
         vertices_y = self.Yg.flatten()
         vertices_z = self.Zg.flatten()
         
-        # Stack to create (N, 3) vertices
-        self.vertices = torch.stack([vertices_x, vertices_y, vertices_z], dim=1)  # Shape: (H*W, 3)
+        # Stack to create (N, 3) vertices and convert to float32 for rendering compatibility
+        self.vertices = torch.stack([vertices_x, vertices_y, vertices_z], dim=1).float()  # Shape: (H*W, 3), dtype: float32
         
         xs = torch.linspace(0, 1, self.W, device=self.device)
         ys = torch.linspace(1, 0, self.H, device=self.device)  # flip Y for image coords
@@ -130,7 +141,7 @@ class TexturedMesh3D:
     
     def _create_textured_mesh(self):
         textures = TexturesUV(
-            maps=self.rgb_image.unsqueeze(0),  # (1, 3, H, W)
+            maps=self.rgb_image.unsqueeze(0),  # (1, H, W, 3)
             verts_uvs=self.verts_uvs.unsqueeze(0),
             faces_uvs=self.faces.unsqueeze(0)
         )
@@ -220,7 +231,9 @@ class TexturedMesh3D:
             img: Rendered orthographic image as a torch.Tensor of shape (H, W, 3).
         """
         camera = self._get_ortho_camera(gsd=gsd)
-        image_size = camera.image_size[0]  # returns (height, width)
+        # camera.image_size[0] returns a tensor, convert to tuple of ints for RasterizationSettings
+        image_size_tensor = camera.image_size[0]
+        image_size = tuple(int(x.item() if isinstance(x, torch.Tensor) else x) for x in image_size_tensor)
         renderer = self._create_ortho_renderer(image_size=image_size, camera=camera)
         img = self._render_ortho(self.mesh, renderer, show=show)
         return img
