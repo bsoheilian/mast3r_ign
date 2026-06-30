@@ -29,6 +29,10 @@ class TexturedMesh3D:
         Zg: torch.Tensor,
         rgb_image: np.ndarray,
         texture_sampling_mode: str = "bilinear",
+        triangle_filter: bool = False,
+        triangle_max_dz: Optional[float] = None,
+        triangle_max_edge_length: Optional[float] = None,
+        triangle_min_area: Optional[float] = None,
     ):
         """
         Initialize the TexturedMesh3D class.
@@ -39,6 +43,10 @@ class TexturedMesh3D:
             Zg: Ground Z coordinates, torch.Tensor of shape (H, W), dtype=torch.float64
             rgb_image: RGB image, np.ndarray of shape (H, W, 3), dtype=float32
             texture_sampling_mode: Texture sampling for TexturesUV ("nearest" or "bilinear").
+            triangle_filter: Enable geometric filtering of triangles before rendering.
+            triangle_max_dz: Reject triangles whose max vertex Z spread exceeds this value.
+            triangle_max_edge_length: Reject triangles with any edge longer than this value.
+            triangle_min_area: Reject triangles with area smaller than this value.
         
         Raises:
             RuntimeError: If CUDA is not available
@@ -102,6 +110,10 @@ class TexturedMesh3D:
         if texture_sampling_mode not in ("nearest", "bilinear"):
             raise ValueError("texture_sampling_mode must be 'nearest' or 'bilinear'")
         self.texture_sampling_mode = texture_sampling_mode
+        self.triangle_filter = triangle_filter
+        self.triangle_max_dz = triangle_max_dz
+        self.triangle_max_edge_length = triangle_max_edge_length
+        self.triangle_min_area = triangle_min_area
         
         # Create mesh vertices and faces
         self._create_mesh_texture_indexes()
@@ -150,6 +162,41 @@ class TexturedMesh3D:
                 faces.append([top_right, bottom_left, bottom_right])
         
         self.faces = torch.tensor(faces, dtype=torch.long, device=self.device)  # Shape: (2*(H-1)*(W-1), 3)
+        self._filter_faces_if_needed()
+
+    def _filter_faces_if_needed(self):
+        if not self.triangle_filter:
+            return
+
+        if self.faces.numel() == 0:
+            return
+
+        v0 = self.vertices[self.faces[:, 0]]
+        v1 = self.vertices[self.faces[:, 1]]
+        v2 = self.vertices[self.faces[:, 2]]
+
+        keep = torch.ones(self.faces.shape[0], dtype=torch.bool, device=self.device)
+
+        if self.triangle_max_dz is not None:
+            z = torch.stack([v0[:, 2], v1[:, 2], v2[:, 2]], dim=1)
+            dz = z.max(dim=1).values - z.min(dim=1).values
+            keep &= dz <= float(self.triangle_max_dz)
+
+        if self.triangle_max_edge_length is not None:
+            e01 = torch.linalg.norm(v1 - v0, dim=1)
+            e12 = torch.linalg.norm(v2 - v1, dim=1)
+            e20 = torch.linalg.norm(v0 - v2, dim=1)
+            emax = torch.stack([e01, e12, e20], dim=1).max(dim=1).values
+            keep &= emax <= float(self.triangle_max_edge_length)
+
+        if self.triangle_min_area is not None:
+            area = 0.5 * torch.linalg.norm(torch.cross(v1 - v0, v2 - v0, dim=1), dim=1)
+            keep &= area >= float(self.triangle_min_area)
+
+        n_before = int(self.faces.shape[0])
+        self.faces = self.faces[keep]
+        n_after = int(self.faces.shape[0])
+        print(f"[triangle_filter] kept {n_after:,}/{n_before:,} faces (removed {n_before - n_after:,}).")
     
     def _create_textured_mesh(self):
         textures = TexturesUV(

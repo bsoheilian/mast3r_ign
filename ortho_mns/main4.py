@@ -7,6 +7,7 @@ from pathlib import Path
 
 from matplotlib import pyplot as plt
 import numpy as np
+from PIL import Image
 
 # Add workspace root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -54,13 +55,23 @@ def main():
     print(f"Xg shape: {Xg.shape}, Yg shape: {Yg.shape}, Zg shape: {Zg.shape}")  
     export_xyzrgb_points_to_ply(Xg, Yg, Zg, 255*rgb_copy, path="./output/points_world_refactor.ply")
     
-    mesh = TexturedMesh3D(Xg, Yg, Zg, rgb)
-    export_ply(mesh.mesh, path="./output/refactor_mesh.ply") 
+    mesh = TexturedMesh3D(Xg, Yg, Zg, rgb, triangle_filter = True, triangle_max_edge_length = 0.5)
+    export_ply(mesh.mesh, path="./output/refactor_mesh_filtered.ply") 
 
-    mesh.create_orth(
-        gsd=0.1,
-        show=True
+    ortho = mesh.create_orth(
+        gsd=0.05,
+        show=False,
+        profile=True,
+        bin_size=None,       # None = PyTorch3D picks coarse bin size automatically
+        max_faces_per_bin=None,  # None = safe_raster auto-computes a safe value
+        safe_raster=True
     )
+
+    # Save ortho image to file
+    ortho_np = (ortho.cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
+    out_path = "./output/refactor_ortho_filtered.png"
+    Image.fromarray(ortho_np).save(out_path)
+    print(f"Ortho saved to {out_path}  shape={ortho_np.shape}")
 
     
 
