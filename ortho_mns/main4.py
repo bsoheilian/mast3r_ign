@@ -59,7 +59,12 @@ def main():
 
     mesh.create_orth(
         gsd=0.1,
-        show=True
+        show=True, 
+        profile=True,
+        safe_raster=False,
+        cull_backfaces=False,
+        use_hard_shader=False,
+
     )
 
     
