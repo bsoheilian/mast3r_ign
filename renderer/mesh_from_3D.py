@@ -218,11 +218,11 @@ class TexturedMesh3D:
     ):
         raster = RasterizationSettings(
             image_size=image_size,
-            blur_radius=blur_radius,
-            faces_per_pixel=faces_per_pixel,
-            bin_size=bin_size,
-            max_faces_per_bin=max_faces_per_bin,
-            cull_backfaces=cull_backfaces,
+            blur_radius=blur_radius,                #default : 0.0
+            faces_per_pixel=faces_per_pixel,        #default : 1
+            bin_size=bin_size,                      #default : None, use pytorch3d heuristic
+            max_faces_per_bin=max_faces_per_bin,    #default : None, use pytorch3d heuristic
+            cull_backfaces=cull_backfaces,          #default : False, if True, drops back-facing triangles (often removes speckles on noisy meshes)
         )
         device = camera.device
         # Full ambient light so texture colors are rendered as-is without shading
@@ -246,6 +246,8 @@ class TexturedMesh3D:
             plt.show()
         return img
     
+    # setting cull_backfaces to True and use_hard_shader to True or False results in 
+    # the left hand side crosswalks that used to be hidden to be visible
     def create_orth(
         self,
         gsd: float=0.1,
@@ -256,8 +258,8 @@ class TexturedMesh3D:
         safe_raster: bool=True,
         faces_per_pixel: int=1,
         blur_radius: float=0.0,
-        cull_backfaces: bool=True,
-        use_hard_shader: bool=True,
+        cull_backfaces: bool=True, #bahmanTrue,
+        use_hard_shader: bool=True, #bahmanTrue,
     ):
         """
         Create an orthographic view of the textured mesh.
