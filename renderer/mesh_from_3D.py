@@ -248,28 +248,22 @@ class TexturedMesh3D:
             shader=shader_cls(device=device, cameras=camera, lights=lights)
         )
     
-    def _render_ortho(self, mesh, renderer, show = False):
+    def _render_ortho(self, mesh, renderer):
         img = renderer(mesh)[0, ..., :3]
-        if show:
-            import matplotlib.pyplot as plt
-            plt.imshow(img.cpu().numpy())
-            plt.show()
         return img
     
-    # setting cull_backfaces to True and use_hard_shader to True or False results in 
-    # the left hand side crosswalks that used to be hidden to be visible
+    
     def create_orth(
         self,
         gsd: float=0.1,
-        show: bool=False,
         profile: bool=False,
         bin_size: Optional[int]=None,
         max_faces_per_bin: Optional[int]=None,
         safe_raster: bool=True,
         faces_per_pixel: int=1,
         blur_radius: float=0.0,
-        cull_backfaces: bool=True, #bahmanTrue,
-        use_hard_shader: bool=True, #bahmanTrue,
+        cull_backfaces: bool=True, 
+        use_hard_shader: bool=True, 
     ):
         """
         Create an orthographic view of the textured mesh.
@@ -277,14 +271,14 @@ class TexturedMesh3D:
         Args:
             gsd: Ground Sample Distance (GSD) in world units per pixel.
             show: If True, display the rendered image using matplotlib.
-            profile: If True, prints step timings and a torch profiler summary.
-            bin_size: Rasterization bin size. Use None for PyTorch3D heuristic.
+            profile: If True, prints step timings and a torch profiler summary. if activated show shall be set to False.
+            bin_size: Rasterization bin size. Use None for PyTorch3D heuristic or 0 for no binning (much slower but avoids overflow).
             max_faces_per_bin: Upper bound for coarse raster bins; increase this when overflow warnings appear.
-            safe_raster: If True, switch to bin_size=0 automatically on very dense meshes to avoid coarse-bin overflow.
+            safe_raster: If True (and both bin_size and max_faces_per_bin are None), auto-sets a conservative max_faces_per_bin to reduce coarse-bin overflow risk while keeping PyTorch3D binning.
             faces_per_pixel: Number of faces stored per pixel (1 is sharpest/fastest).
-            blur_radius: Raster blur radius in NDC; keep 0 for crisp edges.
+            blur_radius: Raster blur radius in NDC; keep 0 for crisp edges. very small values (e.g., 1e-10 to 1e-30) can help avoid artifacts in some cases.
             cull_backfaces: If True, drops back-facing triangles (often removes speckles on noisy meshes).
-            use_hard_shader: If True, uses HardPhongShader for crisper results.
+            use_hard_shader: If True, uses HardPhongShader for crisper results; if False, uses SoftPhongShader for smoother results.
         
         Returns:
             img: Rendered orthographic image as a torch.Tensor of shape (H, W, 3).
@@ -342,13 +336,13 @@ class TexturedMesh3D:
 
             with torch_profile(activities=activities, record_shapes=True) as prof:
                 with record_function("create_orth.render"):
-                    img = self._render_ortho(self.mesh, renderer, show=show)
+                    img = self._render_ortho(self.mesh, renderer)
                     _sync_cuda()
 
             sort_key = "cuda_time_total" if self.device.type == "cuda" else "cpu_time_total"
             print(prof.key_averages().table(sort_by=sort_key, row_limit=20))
         else:
-            img = self._render_ortho(self.mesh, renderer, show=show)
+            img = self._render_ortho(self.mesh, renderer)
             _sync_cuda()
 
         t3 = time.perf_counter()
