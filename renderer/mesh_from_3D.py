@@ -108,14 +108,13 @@ class TexturedMesh3D:
 
         # Create textured mesh
         self._create_textured_mesh()
-        print(f"TexturedMesh3D initialized with mesh of {self.vertices.shape[0]} vertices and {self.faces.shape[0]} faces.")
-        print(f"Vertices dtype: {self.vertices.dtype}")  # Verify vertices are float32
-
         
-        # Camera geometry (to be set via set_camera_geometry)
-        # self.camera_geometry = None
+
+    def _sync_cuda(self):
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
     
-    def _create_mesh_texture_indexes(self):
+    def _create_mesh_texture_indexes(self, verbose: bool=False):
         """
         Create mesh vertices and faces from coordinate grids.
         
@@ -150,6 +149,9 @@ class TexturedMesh3D:
                 faces.append([top_right, bottom_left, bottom_right])
         
         self.faces = torch.tensor(faces, dtype=torch.long, device=self.device)  # Shape: (2*(H-1)*(W-1), 3)
+        if verbose:
+            print(f"[_create_mesh_texture_indexes] Created mesh with {self.vertices.shape[0]} vertices and {self.faces.shape[0]} faces.")
+            print(f"[_create_mesh_texture_indexes] Vertices dtype: {self.vertices.dtype}, Faces dtype: {self.faces.dtype}")
     
     def _create_textured_mesh(self):
         textures = TexturesUV(
@@ -160,7 +162,7 @@ class TexturedMesh3D:
         )
         self.mesh = Meshes(verts=[self.vertices], faces=[self.faces], textures=textures)
 
-    def _get_ortho_camera(self, gsd: float=0.1):
+    def _get_ortho_camera(self, gsd: float=0.1, verbose: bool=False):
         # C is the coordinate of the camera center in world coordinates. 
         # For orthographic camera, we can place it above the mesh.
         cx = (self.Xmin + self.Xmax) / 2
@@ -199,6 +201,10 @@ class TexturedMesh3D:
         W = math.ceil((self.Xmax - self.Xmin) / gsd)
         H = math.ceil((self.Ymax - self.Ymin) / gsd)
 
+        if verbose:
+            print(f"[get_ortho_camera] gsd={gsd}, image_size=({H}, {W}), scale={scale}, px={px}, py={py}")
+            print(f"[get_ortho_camera] R:\n{R}\nT:\n{T}\nC:\n{C}")
+
         return OrthographicCameras(device=self.device, R=R, T=T,
                                    focal_length=((scale, scale),),
                                    principal_point=((px,py),),
@@ -215,6 +221,7 @@ class TexturedMesh3D:
         blur_radius: float = 0.0,
         cull_backfaces: bool = False,
         use_hard_shader: bool = True,
+        verbose: bool = False,
     ):
         raster = RasterizationSettings(
             image_size=image_size,
@@ -225,14 +232,15 @@ class TexturedMesh3D:
             cull_backfaces=cull_backfaces,          #default : False, if True, drops back-facing triangles (often removes speckles on noisy meshes)
         )
 
-        print(f"Creating orthographic renderer with the following settings:")
-        print(f"image_size              = {image_size}")
-        print(f"blur_radius             = {blur_radius}")
-        print(f"faces_per_pixel         = {faces_per_pixel}")
-        print(f"bin_size                = {bin_size}")
-        print(f"max_faces_per_bin       = {max_faces_per_bin}")
-        print(f"cull_backfaces          = {cull_backfaces}")
-
+        if verbose:
+            print(f"Creating orthographic renderer with the following settings:")
+            print(f"image_size              = {image_size}")
+            print(f"blur_radius             = {blur_radius}")
+            print(f"faces_per_pixel         = {faces_per_pixel}")
+            print(f"bin_size                = {bin_size}")
+            print(f"max_faces_per_bin       = {max_faces_per_bin}")
+            print(f"cull_backfaces          = {cull_backfaces}")
+            print(f"use_hard_shader         = {use_hard_shader}")
 
         device = camera.device
         # Full ambient light so texture colors are rendered as-is without shading
@@ -264,6 +272,7 @@ class TexturedMesh3D:
         blur_radius: float=0.0,
         cull_backfaces: bool=True, 
         use_hard_shader: bool=True, 
+        verbose: bool=False,
     ):
         """
         Create an orthographic view of the textured mesh.
@@ -283,13 +292,11 @@ class TexturedMesh3D:
         Returns:
             img: Rendered orthographic image as a torch.Tensor of shape (H, W, 3).
         """
-        def _sync_cuda():
-            if self.device.type == "cuda":
-                torch.cuda.synchronize(self.device)
+
 
         t0 = time.perf_counter()
-        camera = self._get_ortho_camera(gsd=gsd)
-        _sync_cuda()
+        camera = self._get_ortho_camera(gsd=gsd, verbose=verbose)
+        if verbose: self._sync_cuda()
         t1 = time.perf_counter()
 
         # camera.image_size[0] returns a tensor, convert to tuple of ints for RasterizationSettings
@@ -304,15 +311,13 @@ class TexturedMesh3D:
             # Auto-compute max_faces_per_bin so coarse bins never overflow.
             # PyTorch3D default bin_size heuristic: ceil(sqrt(image_max_dim / 2))
             # Each bin covers bin_size x bin_size pixels; estimate how many faces fall in a bin.
-            img_max = max(image_size)
-            auto_bin = max(1, math.ceil(math.sqrt(img_max / 2)))
-            # effective_bin_size = 5*auto_bin
+            # img_max = max(image_size)
+            auto_bin = max(1, math.ceil(math.sqrt(max(image_size) / 2)))
             # upper-bound: assume all faces could land in one bin (conservative but correct)
             effective_max_faces_per_bin = max(n_faces, 30000)
-            print(
-                f"[create_orth] auto bin_size={auto_bin}, "
-                f"max_faces_per_bin={effective_max_faces_per_bin} (from {n_faces:,} faces)"
-            )
+            if verbose:
+                print(f"[create_orth] auto bin_size (estimation)={auto_bin}, "
+                      f"max_faces_per_bin={effective_max_faces_per_bin} (from {n_faces:,} faces)")
 
         renderer = self._create_ortho_renderer(
             image_size=image_size,
@@ -323,30 +328,16 @@ class TexturedMesh3D:
             blur_radius=blur_radius,
             cull_backfaces=cull_backfaces,
             use_hard_shader=use_hard_shader,
+            verbose=verbose,
         )
-        _sync_cuda()
+        if verbose: self._sync_cuda()
         t2 = time.perf_counter()
 
-        if profile:
-            from torch.profiler import profile as torch_profile, record_function, ProfilerActivity
-
-            activities = [ProfilerActivity.CPU]
-            if self.device.type == "cuda":
-                activities.append(ProfilerActivity.CUDA)
-
-            with torch_profile(activities=activities, record_shapes=True) as prof:
-                with record_function("create_orth.render"):
-                    img = self._render_ortho(self.mesh, renderer)
-                    _sync_cuda()
-
-            sort_key = "cuda_time_total" if self.device.type == "cuda" else "cpu_time_total"
-            print(prof.key_averages().table(sort_by=sort_key, row_limit=20))
-        else:
-            img = self._render_ortho(self.mesh, renderer)
-            _sync_cuda()
-
+        img = self._render_ortho(self.mesh, renderer)
+        if verbose: self._sync_cuda()
         t3 = time.perf_counter()
-        if profile:
+        
+        if verbose:
             n_verts = int(self.vertices.shape[0])
             n_pixels = int(image_size[0] * image_size[1])
             print(

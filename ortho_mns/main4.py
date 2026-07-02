@@ -66,6 +66,7 @@ def main():
         use_hard_shader=True,
         faces_per_pixel = 1,
         blur_radius = 1e-30,
+        verbose=True
     )
     show = False
     if show:
