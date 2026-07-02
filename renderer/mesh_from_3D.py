@@ -198,21 +198,40 @@ class TexturedMesh3D:
         T = T.unsqueeze(0)  # Add batch dimension
         
         # scale is defined to scale the mesh to fit in the [-1, 1] range for rendering.
-        scale = 2.0/(max(self.Xmax - self.Xmin, self.Ymax - self.Ymin))  # Scale to fit in [-1, 1] range
+        # scale = 2.0/(max(self.Xmax - self.Xmin, self.Ymax - self.Ymin))  # Scale to fit in [-1, 1] range
+        
+        dx = self.Xmax - self.Xmin
+        dy = self.Ymax - self.Ymin
+        
+        W = int(math.ceil((self.Xmax - self.Xmin) / gsd))
+        H = int(math.ceil((self.Ymax - self.Ymin) / gsd))
+        
+        W = max(W, 1)
+        H = max(H, 1)
+        
+        rx = max(W / H, 1.0)
+        ry = max(H / W, 1.0)
 
+        scale_x = 2.0 * rx / dx
+        scale_y = 2.0 * ry / dy
+        
+        
+        # scale_x = 2.0 / (self.Xmax - self.Xmin)
+        # scale_y = 2.0 / (self.Ymax - self.Ymin)
         # PPA no translation in x and y
         px = py = 0.0  
         
         #image size is defined based on the GSD and the mesh extents
-        W = math.ceil((self.Xmax - self.Xmin) / gsd)
-        H = math.ceil((self.Ymax - self.Ymin) / gsd)
+        # W = math.ceil((self.Xmax - self.Xmin) / gsd)
+        # H = math.ceil((self.Ymax - self.Ymin) / gsd)
 
+        
         if verbose:
-            print(f"[get_ortho_camera] gsd={gsd}, image_size=({H}, {W}), scale={scale}, px={px}, py={py}")
+            print(f"[get_ortho_camera] gsd={gsd}, image_size=({H}, {W}), scale_x={scale_x}, scale_y={scale_y}, px={px}, py={py}")
             print(f"[get_ortho_camera] R:\n{R}\nT:\n{T}\nC:\n{C}")
 
         return OrthographicCameras(device=self.device, R=R, T=T,
-                                   focal_length=((scale, scale),),
+                                   focal_length=((scale_x, scale_y),),
                                    principal_point=((px,py),),
                                    image_size=((H, W),)
                                    )
