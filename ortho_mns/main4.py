@@ -57,15 +57,25 @@ def main():
     mesh = TexturedMesh3D(Xg, Yg, Zg, rgb)
     export_ply(mesh.mesh, path="./output/refactor_mesh.ply") 
 
-    mesh.create_orth(
-        gsd=0.1,
-        show=True, 
-        profile=True,
-        safe_raster=False,
-        cull_backfaces=False,
-        use_hard_shader=False,
 
+    img = mesh.create_orth(
+        gsd=0.1,
+        profile=True,
+        safe_raster=True,
+        cull_backfaces=True,
+        use_hard_shader=True,
+        faces_per_pixel = 1,
+        blur_radius = 1e-30,
     )
+    show = False
+    if show:
+        import matplotlib.pyplot as plt
+        plt.imshow(img.cpu().numpy())
+        plt.show()
+    else:
+        import matplotlib.pyplot as plt
+        plt.imsave("./output/orthographic_rendered_image.png", img.cpu().numpy())
+    
 
     
 

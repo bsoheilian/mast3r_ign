@@ -224,6 +224,16 @@ class TexturedMesh3D:
             max_faces_per_bin=max_faces_per_bin,    #default : None, use pytorch3d heuristic
             cull_backfaces=cull_backfaces,          #default : False, if True, drops back-facing triangles (often removes speckles on noisy meshes)
         )
+
+        print(f"Creating orthographic renderer with the following settings:")
+        print(f"image_size              = {image_size}")
+        print(f"blur_radius             = {blur_radius}")
+        print(f"faces_per_pixel         = {faces_per_pixel}")
+        print(f"bin_size                = {bin_size}")
+        print(f"max_faces_per_bin       = {max_faces_per_bin}")
+        print(f"cull_backfaces          = {cull_backfaces}")
+
+
         device = camera.device
         # Full ambient light so texture colors are rendered as-is without shading
         lights = AmbientLights(device=device)
@@ -302,6 +312,7 @@ class TexturedMesh3D:
             # Each bin covers bin_size x bin_size pixels; estimate how many faces fall in a bin.
             img_max = max(image_size)
             auto_bin = max(1, math.ceil(math.sqrt(img_max / 2)))
+            # effective_bin_size = 5*auto_bin
             # upper-bound: assume all faces could land in one bin (conservative but correct)
             effective_max_faces_per_bin = max(n_faces, 30000)
             print(
