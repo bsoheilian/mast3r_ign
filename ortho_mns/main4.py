@@ -76,6 +76,12 @@ def main():
     else:
         import matplotlib.pyplot as plt
         plt.imsave("./output/orthographic_rendered_image.png", img.cpu().numpy())
+        mesh._write_vrt_qgis_safe(
+            vert_file_path="./output/orthographic_rendered_image.vrt",
+            ortho_img_path="/home/BSoheilian/work/dev/mast3r_ign/output/orthographic_rendered_image.png",
+            gsd=0.1,
+            ortho_img_size=(img.shape[0], img.shape[1])
+        )
     
 
     

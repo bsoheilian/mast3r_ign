@@ -1,5 +1,8 @@
 import math
+from pathlib import Path
 import time
+from xml.dom import minidom
+from xml.etree.ElementTree import Element, SubElement, tostring
 
 import torch
 from pytorch3d.renderer import TexturesUV
@@ -10,7 +13,10 @@ from pytorch3d.renderer import (
     RasterizationSettings, SoftPhongShader, HardPhongShader, AmbientLights
 )
 import numpy as np
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
+
+# VRT SRS constant
+DEFAULT_SRS_EPSG = "EPSG:2154"
 
 
 class TexturedMesh3D:
@@ -87,7 +93,7 @@ class TexturedMesh3D:
         self.Ymin, self.Ymax = Yg.min().item(), Yg.max().item()
         self.Zmin, self.Zmax = Zg.min().item(), Zg.max().item()
         self.Xinsertion = self.Xmin
-        self.Yinsertion = self.Ymin 
+        self.Yinsertion = self.Ymin # test for vrt 
         self.Zinsertion = 0.0
 
         # translate the double coordinates to float for rendering by subtracting Xmin and Ymin
@@ -351,11 +357,43 @@ class TexturedMesh3D:
         return img
 
 
+    def _write_vrt_qgis_safe(self, vert_file_path: Union[str, Path], ortho_img_path: Union[str, Path], gsd: float, ortho_img_size: Tuple[int, int]):
+        """
+        Write a VRT file for QGIS that references the orthographic image and includes georeferencing information.
+        
+        Args:
+            vert_file_path: Path to save the VRT file.
+            ortho_img_path: Path to the orthographic image (e.g., PNG or TIFF).
+            gsd: Ground Sample Distance (GSD) in world units per pixel.
+        """
+
+        height, width = ortho_img_size
+        ymax = self.Yinsertion + height * gsd
+        gt = [self.Xinsertion, gsd, 0, ymax, 0, -gsd]
+        vrt = Element("VRTDataset", rasterXSize=str(width), rasterYSize=str(height))
+        srs = SubElement(vrt, "SRS")
+        srs.text = DEFAULT_SRS_EPSG
+        geotransform = SubElement(vrt, "GeoTransform")
+        geotransform.text = ", ".join(map(str, gt))
+
+        for b in [1, 2, 3]:
+            band = SubElement(vrt, "VRTRasterBand", dataType="Byte", band=str(b))
+            src = SubElement(band, "SimpleSource")
+
+            fn = SubElement(src, "SourceFilename", relativeToVRT="1")
+            fn.text = str(ortho_img_path)
+
+            sb = SubElement(src, "SourceBand")
+            sb.text = str(b)
+
+            SubElement(src, "SrcRect", xOff="0", yOff="0", xSize=str(width), ySize=str(height))
+            SubElement(src, "DstRect", xOff="0", yOff="0", xSize=str(width), ySize=str(height))
 
 
-
-
-
+        xml_str = minidom.parseString(tostring(vrt)).toprettyxml(indent="  ")
+        
+        with open(vert_file_path, "w") as f:
+            f.write(xml_str)
 
 
   
