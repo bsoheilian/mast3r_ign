@@ -57,9 +57,9 @@ def main():
     mesh = TexturedMesh3D(Xg, Yg, Zg, rgb)
     export_ply(mesh.mesh, path="./output/refactor_mesh.ply") 
 
-
+    gsd = 0.05
     img = mesh.create_orth(
-        gsd=0.1,
+        gsd=gsd,
         profile=True,
         safe_raster=True,
         cull_backfaces=True,
@@ -79,7 +79,7 @@ def main():
         mesh._write_vrt_qgis_safe(
             vert_file_path="./output/orthographic_rendered_image.vrt",
             ortho_img_path="/home/BSoheilian/work/dev/mast3r_ign/output/orthographic_rendered_image.png",
-            gsd=0.1,
+            gsd=gsd,
             ortho_img_size=(img.shape[0], img.shape[1])
         )
     
