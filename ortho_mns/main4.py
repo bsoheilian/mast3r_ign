@@ -15,12 +15,12 @@ from ori_img_utils.ori import Orientation
 from renderer.mesh_from_3D import TexturedMesh3D
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    k_path = '/mast3r_ign/output/K_undist.txt'
+    k_path = '/mast3r_ign/output/K_stereo.txt'
     R_path = '/mast3r_ign/output/R.txt'
     C_path = '/mast3r_ign/output/T.txt'
-    rgb_path = '/mast3r_ign/output/rgb_undist.npy'
+    rgb_path = '/mast3r_ign/output/rgb.npy'
     # depth_path = '/mast3r_ign/output/depth.npy'
-    depth_path = '/mast3r_ign/output/depth_undist.npy'
+    depth_path = '/mast3r_ign/output/depth_stereo.npy'
     
     # Load orientation from files 
     ori = Orientation.from_files(k_path, R_path, C_path)
