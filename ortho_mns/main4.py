@@ -15,12 +15,12 @@ from ori_img_utils.ori import Orientation
 from renderer.mesh_from_3D import TexturedMesh3D
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    k_path = '/mast3r_ign/output/K.txt'
+    k_path = '/mast3r_ign/output/K_undist.txt'
     R_path = '/mast3r_ign/output/R.txt'
     C_path = '/mast3r_ign/output/T.txt'
-    rgb_path = '/mast3r_ign/output/rgb.npy'
+    rgb_path = '/mast3r_ign/output/rgb_undist.npy'
     # depth_path = '/mast3r_ign/output/depth.npy'
-    depth_path = '/mast3r_ign/output/debug_depthmap_Lille-150127_0485-11-00002_0000384_ss.jpg.npy'
+    depth_path = '/mast3r_ign/output/depth_undist.npy'
     
     # Load orientation from files 
     ori = Orientation.from_files(k_path, R_path, C_path)
@@ -38,7 +38,7 @@ def main():
     plt.imshow(depth, cmap='gray', vmin=0.0) #, vmax=10.50)
     plt.show()
 
-    plt.imsave("./output/debug_depthmap_Lille-150127_0485-11-00002_0000384_ss.jpg.png", depth)
+    # plt.imsave("./output/debug_depthmap_Lille-150127_0485-11-00002_0000384_ss.jpg.png", depth)
 
     #convert images to torch tensors
     # rgb = torch.from_numpy(rgb).permute(2, 0, 1).float().to(device) # Convert to torch tensor of shape (3, H, W)
