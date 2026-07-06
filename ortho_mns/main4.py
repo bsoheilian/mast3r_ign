@@ -19,7 +19,8 @@ def main():
     R_path = '/mast3r_ign/output/R.txt'
     C_path = '/mast3r_ign/output/T.txt'
     rgb_path = '/mast3r_ign/output/rgb.npy'
-    depth_path = '/mast3r_ign/output/depth.npy'
+    # depth_path = '/mast3r_ign/output/depth.npy'
+    depth_path = '/mast3r_ign/output/debug_depthmap_Lille-150127_0485-11-00002_0000384_ss.jpg.npy'
     
     # Load orientation from files 
     ori = Orientation.from_files(k_path, R_path, C_path)
@@ -29,13 +30,15 @@ def main():
     rgb = np.load(rgb_path)  # Load RGB image With shape (H, W, 3)
     H, W, _ = rgb.shape
     print(f"RGB image shape: {rgb.shape}, dtype: {rgb.dtype}, min: {rgb.min()}, max: {rgb.max()}, type: {type(rgb)}")
-    # plt.imshow(rgb)
-    # plt.show()
+    plt.imshow(rgb)
+    plt.show()
     depth = np.load(depth_path)  # Load depth image With shape (HxW,)
     depth = depth.reshape(H, -1)  # Reshape to (H, W)
     print(f"Depth image shape: {depth.shape}, dtype: {depth.dtype}, type: {type(depth)}, min: {depth.min()}, max: {depth.max()}")
-    # plt.imshow(depth, cmap='gray', vmin=2.0, vmax=2.50)
-    # plt.show()
+    plt.imshow(depth, cmap='gray', vmin=0.0) #, vmax=10.50)
+    plt.show()
+
+    plt.imsave("./output/debug_depthmap_Lille-150127_0485-11-00002_0000384_ss.jpg.png", depth)
 
     #convert images to torch tensors
     # rgb = torch.from_numpy(rgb).permute(2, 0, 1).float().to(device) # Convert to torch tensor of shape (3, H, W)
@@ -70,11 +73,11 @@ def main():
     )
     show = False
     if show:
-        import matplotlib.pyplot as plt
+        # import matplotlib.pyplot as plt
         plt.imshow(img.cpu().numpy())
         plt.show()
     else:
-        import matplotlib.pyplot as plt
+        # import matplotlib.pyplot as plt
         plt.imsave("./output/orthographic_rendered_image.png", img.cpu().numpy())
         mesh._write_vrt_qgis_safe(
             vert_file_path="./output/orthographic_rendered_image.vrt",
