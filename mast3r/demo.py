@@ -131,31 +131,6 @@ def get_3D_model_from_scene(silent, scene_state, min_conf_thr=2, as_pointcloud=F
     rgbimg = scene.imgs
     focals = scene.get_focals().cpu()
     cams2world = scene.get_im_poses().cpu()
-    # Bahman for understanding the output of mast3r, you can print the following values:
-    print('cams2world', cams2world)
-    print('focals', focals)   
-    print('intrinsics', scene.intrinsics)
-    print('img_paths', scene.img_paths)
-    
-    with open('/mast3r_ign/output/cli/debug_output.txt', 'w') as f:
-        f.write(f'cams2world: {cams2world}\n')
-        f.write(f'focals: {focals}\n')
-        f.write(f'intrinsics: {scene.intrinsics}\n')
-        f.write(f'img_paths: {scene.img_paths}\n')
-    
-    deptmaps = scene.get_depthmaps()
-    for idx, depth in enumerate(deptmaps):
-        img_name = scene.img_paths[idx].split('/')[-1] if idx < len(scene.img_paths) else f'depth_{idx}'
-        output_file = f'/mast3r_ign/output/cli/debug_depthmap_{img_name}.npy'
-        img_output_file = f'/mast3r_ign/output/cli/debug_rgb_{img_name}.npy'
-        np_img = to_numpy(rgbimg[idx])
-        np.save(img_output_file, np_img)
-        print(f'writing rgb image {np_img.shape} for {img_name}')
-        
-        np_depth = to_numpy(deptmaps[idx])
-        np.save(output_file, np_depth)
-        print(f'writing depth map {np_depth.shape} for {img_name}')
-        
 
     # 3D pointcloud from depthmap, poses and intrinsics
     if TSDF_thresh > 0:
