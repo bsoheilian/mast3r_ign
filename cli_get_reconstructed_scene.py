@@ -20,7 +20,8 @@ def main():
     silent = False
     image_size = 512
     current_scene_state = None
-    filelist = ['./data/Lille-150127_0485-11-00002_0000384.jpg']  # List of image file paths
+    # filelist = ['./data/Lille-150127_0485-11-00002_0000384.jpg']  # List of image file paths
+    filelist = ['./data/chantier_lilles/pvt/Lille-150127_0485-11-00002_0000384_dist_corrected.jpg']  # List of image file paths
     optim_level = 'refine'
     lr1 = 0.07
     niter1 = 300
