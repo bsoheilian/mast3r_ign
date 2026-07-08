@@ -38,11 +38,11 @@ def main():
     win_cyclic = False
     refid = 0
     TSDF_thresh = 0.0
-    shared_intrinsics = True
+    shared_intrinsics = False  #setting to true shall use the same intrinsics but strangly introduces big error when only one image is used.
     
     # Call get_reconstructed_scene
     model = AsymmetricMASt3R.from_pretrained(weights_path).to('cuda')
-    scene_state, outfile = get_reconstructed_scene(
+    get_reconstructed_scene(
         outdir=outdir,
         gradio_delete_cache=gradio_delete_cache,
         model=model,
@@ -69,12 +69,10 @@ def main():
         win_cyclic=win_cyclic,
         refid=refid,
         TSDF_thresh=TSDF_thresh,
-        shared_intrinsics=shared_intrinsics
+        shared_intrinsics=shared_intrinsics,
+        cli_call=True
     )
     
-    print(f"Scene state: {scene_state}")
-    print(f"Output file: {outfile}")
-    return scene_state, outfile
 
 
 if __name__ == '__main__':
