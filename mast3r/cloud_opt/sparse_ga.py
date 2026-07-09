@@ -143,7 +143,7 @@ def sparse_global_alignment(imgs, pairs_in, cache_path, model, subsample=8, desc
         condense_data(imgs, tmp_pairs, canonical_views, preds_21, dtype)
 
     # Build kinematic chain
-    if kinematic_mode == 'mst':
+    if kinematic_mode == 'mst': 
         # compute minimal spanning tree
         mst = compute_min_spanning_tree(pairwise_scores)
 
