@@ -16,11 +16,15 @@ from renderer.mesh_from_3D import TexturedMesh3D
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     k_path = '/mast3r_ign/output/intrinsic.txt'
-    R_path = '/mast3r_ign/output/R.txt'
-    C_path = '/mast3r_ign/output/T.txt'
+    # R_path = '/mast3r_ign/output/R.txt'
+    # C_path = '/mast3r_ign/output/T.txt'
+    #todo Bahman how to handle the images rotated 180 deg around Z that causes serieus anomalies when AI images are applied on. 
+    R_path = '/mast3r_ign/output/R_Paris-140613_0494-301-00003_0000191_rot.txt'
+    C_path = '/mast3r_ign/output/T_Paris-140613_0494-301-00003_0000191.txt'
     rgb_path = '/mast3r_ign/output/rgb_image.npy'
     # depth_path = '/mast3r_ign/output/depth.npy'
     depth_path = '/mast3r_ign/output/depth_image.npy'
+    z_scale = 0.5/0.32  # Adjust this value based on your depth map's scale
     
     # Load orientation from files 
     ori = Orientation.from_files(k_path, R_path, C_path)
@@ -45,7 +49,7 @@ def main():
     # depth = torch.from_numpy(depth).float().to(device)  
 
     # apply K
-    Xcam, Ycam, Zcam = ori.apply_K_torch(depth, z_scale=2.5, device="cuda" if torch.cuda.is_available() else "cpu")
+    Xcam, Ycam, Zcam = ori.apply_K_torch(depth, z_scale=1.0, device="cuda" if torch.cuda.is_available() else "cpu")
     print(f"Xcam shape: {Xcam.shape}, Ycam shape: {Ycam.shape}, Zcam shape: {Zcam.shape}")
     print(f"Xcam type: {Xcam.dtype}, Ycam type: {Ycam.dtype}, Zcam type: {Zcam.dtype}")
 
@@ -92,3 +96,13 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+
+
