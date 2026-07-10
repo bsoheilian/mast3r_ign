@@ -36,6 +36,7 @@ RUN apt-get update && apt-get install -y \
 # RUN pip install pytorch3d
 RUN git clone https://github.com/facebookresearch/pytorch3d.git /opt/pytorch3d && \
     cd /opt/pytorch3d && \
+    git checkout v0.7.9 && \
     export USE_CUDA=1 && \
     export FORCE_CUDA=1 && \
     export CUDA_HOME=/usr/local/cuda && \
