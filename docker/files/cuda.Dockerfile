@@ -1,9 +1,5 @@
 FROM nvcr.io/nvidia/pytorch:25.03-py3
 
-ENV HTTP_PROXY=http://proxy.ign.fr:3128
-ENV HTTPS_PROXY=http://proxy.ign.fr:3128
-ENV NO_PROXY=localhost,127.0.0.1,*.ign.fr
-
 ARG DEBIAN_FRONTEND=noninteractive
 
 # System deps
