@@ -1,6 +1,6 @@
 version: '3.8'
 services:
-  mast3r-demo:
+  mast3r-cuda:
     network_mode: host
     entrypoint: ["bash"]
     build:
