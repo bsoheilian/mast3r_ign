@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+cleanup_xhost() {
+	if [[ "${XHOST_ENABLED:-0}" -eq 1 ]]; then
+		xhost -local: >/dev/null 2>&1 || true
+	fi
+}
+
+XHOST_ENABLED=0
+if [[ -n "${DISPLAY:-}" ]] && command -v xhost >/dev/null 2>&1; then
+	xhost +local: >/dev/null
+	XHOST_ENABLED=1
+	trap cleanup_xhost EXIT
+fi
+
+docker compose -f docker-compose-cuda.yml run --build --rm \
+	-e DISPLAY="${DISPLAY:-}" \
+	-v /tmp/.X11-unix:/tmp/.X11-unix \
+	mast3r-cuda "$@"

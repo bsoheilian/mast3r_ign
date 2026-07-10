@@ -1,6 +1,7 @@
 version: '3.8'
 services:
   mast3r-cuda:
+    image: mast3r-ign-cuda
     network_mode: host
     entrypoint: ["bash"]
     build:
