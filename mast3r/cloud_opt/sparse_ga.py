@@ -130,6 +130,7 @@ def sparse_global_alignment(imgs, pairs_in, cache_path, model, subsample=8, desc
     # Convert pair naming convention from dust3r to mast3r
     pairs_in = convert_dust3r_pairs_naming(imgs, pairs_in)
     # forward pass
+    #todo bahman : handle cash to be done only in gradio mode, otherwise it is not needed and will be a waste of time and space.
     pairs, cache_path = forward_mast3r(pairs_in, model,
                                        cache_path=cache_path, subsample=subsample,
                                        desc_conf=desc_conf, device=device)

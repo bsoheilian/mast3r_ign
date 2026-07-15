@@ -50,7 +50,7 @@ class Orientation:
         Raises:
             ValueError: If matrix dimensions or types are incorrect
         """
-        return cls(_K=K, _R=R, _C=C)
+        return cls(_K=K, _R=R.T, _C=C)
     
     @classmethod
     def from_files(cls, K_path: Union[str, Path], R_path: Union[str, Path], C_path: Union[str, Path]) -> "Orientation":

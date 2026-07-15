@@ -131,7 +131,11 @@ docker/files/checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth
 docker/files/checkpoints/checkpoint-aerial-mast3r.pth
 
 debug_render.png
+data/*.png
+data/*.jpg
+output/*png
+output/*jpg
+*.pth
+ign_samples/output/*
 data/*
 output/*
-*.png
-*.jpg
