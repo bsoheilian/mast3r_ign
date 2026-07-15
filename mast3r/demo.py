@@ -177,7 +177,8 @@ def get_reconstructed_scene(outdir, gradio_delete_cache, model, retrieval_model,
                             current_scene_state, filelist, optim_level, lr1, niter1, lr2, niter2, min_conf_thr,
                             matching_conf_thr, as_pointcloud, mask_sky, clean_depth, transparent_cams, cam_size,
                             scenegraph_type, winsize, win_cyclic, refid, TSDF_thresh, shared_intrinsics, 
-                            cli_call = False,**kw):
+                            cli_call = False, 
+                            **kw):
     """
     from a list of images, run mast3r inference, sparse global aligner.
     then run get_3D_model_from_scene
@@ -231,7 +232,7 @@ def get_reconstructed_scene(outdir, gradio_delete_cache, model, retrieval_model,
                                     model, lr1=lr1, niter1=niter1, lr2=lr2, niter2=niter2, device=device,
                                     opt_depth='depth' in optim_level, shared_intrinsics=shared_intrinsics,
                                     matching_conf_thr=matching_conf_thr, 
-                                    subsample = 1, **kw)
+                                    **kw)
     if cli_call:
         return cli_write_results_to_files(scene, outdir)
     

@@ -41,6 +41,7 @@ def main():
     refid = 0
     TSDF_thresh = 0.0
     shared_intrinsics = False  #setting to true shall use the same intrinsics but strangly introduces big error when only one image is used.
+    subsample = 1
     
     # Call get_reconstructed_scene
     model = AsymmetricMASt3R.from_pretrained(weights_path).to('cuda')
@@ -72,6 +73,7 @@ def main():
         refid=refid,
         TSDF_thresh=TSDF_thresh,
         shared_intrinsics=shared_intrinsics,
+        subsample=subsample,
         cli_call=True
     )
     
