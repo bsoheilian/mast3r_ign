@@ -1,11 +1,32 @@
 #!/usr/bin/env python3
 import sys
-
+import os
+import numpy as np
 from mast3r.model import AsymmetricMASt3R
 sys.path.insert(0, '/home/BSoheilian/work/dev/mast3r_ign')
 
 from mast3r.demo import get_reconstructed_scene
 
+def cli_write_results_to_files(img_rgb,img_depth,intrinsics,extrinsics, outdir):
+ 
+
+
+    img_rgb_file = os.path.join(outdir, 'rgb_image.npy')
+    img_depth_file = os.path.join(outdir, 'depth_image.npy')
+    intrinsics_file = os.path.join(outdir, 'intrinsic.txt')
+    extrinsics_file = os.path.join(outdir, 'pose.txt')
+        
+    np.save(img_rgb_file, img_rgb )
+    np.save(img_depth_file, img_depth)
+    np.savetxt(intrinsics_file, intrinsics)
+    np.savetxt(extrinsics_file, extrinsics)
+    
+
+    print(f"Saved RGB image of size {img_rgb.shape} to: {img_rgb_file}")
+    print(f"Saved depth map of size {img_depth.shape} to: {img_depth_file}")
+    print(f"Saved intrinsic matrix {intrinsics} to: {intrinsics_file}")
+    print(f"Saved camera pose {extrinsics} to: {extrinsics_file}")
+    
 
 def main():
     """
@@ -45,7 +66,7 @@ def main():
     
     # Call get_reconstructed_scene
     model = AsymmetricMASt3R.from_pretrained(weights_path).to('cuda')
-    get_reconstructed_scene(
+    img_rgb,img_depth,intrinsics,extrinsics = get_reconstructed_scene(
         outdir=outdir,
         gradio_delete_cache=gradio_delete_cache,
         model=model,
@@ -76,6 +97,10 @@ def main():
         subsample=subsample,
         cli_call=True
     )
+    cli_write_results_to_files(img_rgb,img_depth,intrinsics,extrinsics, outdir)
+
+
+
     
 
 

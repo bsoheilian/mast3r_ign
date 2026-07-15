@@ -233,7 +233,8 @@ def get_reconstructed_scene(outdir, gradio_delete_cache, model, retrieval_model,
                                     matching_conf_thr=matching_conf_thr, 
                                     **kw)
     if cli_call:
-        return cli_write_results_to_files(scene, outdir)
+        # return cli_write_results_to_files(scene, outdir)
+          return to_numpy(scene.imgs[0]), to_numpy(scene.get_depthmaps()[0]), to_numpy(scene.intrinsics.cpu()[0]), to_numpy(scene.get_im_poses().cpu()[0])
     
     
     if current_scene_state is not None and \
