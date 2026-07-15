@@ -23,7 +23,7 @@ def main():
     # filelist = ['./data/Lille-150127_0485-11-00002_0000384.jpg']  # List of image file paths
     #todo Bahman how to handle the images rotated 180 deg around Z that causes serieus anomalies when AI images are applied on. 
     filelist = ['./data/chantier_lilles/pvt/Paris-140613_0494-301-00003_0000191_undist_rot.jpg']  # List of image file paths
-    optim_level = 'refine'
+    optim_level = 'refine' # it does not make sense to use refine+depth as the input is a single image only refine is ok 
     lr1 = 0.07
     niter1 = 300
     lr2 = 0.01
