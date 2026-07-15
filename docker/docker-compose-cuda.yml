@@ -3,33 +3,36 @@ services:
   mast3r-cuda:
     image: mast3r-ign-cuda
     hostname: mast3r-ign-cuda-container
-    network_mode: host
+    network_mode: host  # for runtime, the container will use the host network
     entrypoint: ["bash"]
     build:
-      context: ../
+      context: ../  # used during build for COPY instructions in Dockerfile
       dockerfile: docker/files/cuda.Dockerfile 
-      network: host
-      args:
+      network: host #isolated networks may not be able to access the proxy, so we use host network for build
+      args: # during build, the proxy is set for apt-get, pip and git
         HTTP_PROXY: http://proxy.ign.fr:3128
         HTTPS_PROXY: http://proxy.ign.fr:3128
         NO_PROXY: localhost,127.0.0.1,*.ign.fr
         http_proxy: http://proxy.ign.fr:3128
         https_proxy: http://proxy.ign.fr:3128
         no_proxy: localhost,127.0.0.1,*.ign.fr
-    environment:
+    environment: #runtime environment variables, set for the container
       - DEVICE=cuda
       - HTTP_PROXY=http://proxy.ign.fr:3128
       - HTTPS_PROXY=http://proxy.ign.fr:3128
       - NO_PROXY=localhost,127.0.0.1,*.ign.fr
+      - http_proxy=http://proxy.ign.fr:3128
+      - https_proxy=http://proxy.ign.fr:3128
+      - no_proxy=localhost,127.0.0.1,*.ign.fr
     volumes:
-      - ../:/mast3r_ign
+      - ../:/mast3r_ign  #relative path shall be set from where the actual YML file is placed.
       - ../../../data/chantier_lilles/:/mast3r_ign/data/chantier_lilles
     devices:
-      - /dev/dri:/dev/dri
+      - /dev/dri:/dev/dri #required for rendering and display 
     cap_add:
-      - IPC_LOCK
-      - SYS_RESOURCE
-    gpus: all
+      - IPC_LOCK      # allow locking memory pages into RAM (needed by NCCL/GPU libs)
+      - SYS_RESOURCE  # allow overriding OS resource limits (needed for large ML workloads)
+    gpus: all # give access to all GPUs, this is required for the container to use CUDA. 
     # runtime: nvidia
     deploy:
       resources:
