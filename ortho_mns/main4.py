@@ -1,6 +1,7 @@
 
 import sys
-from render import export_ply, export_xyzrgb_points_to_ply
+
+
 
 import torch
 from pathlib import Path
@@ -13,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ori_img_utils.ori import Orientation
 from renderer.mesh_from_3D import TexturedMesh3D
+from renderer.export_to_ply import export_ply, export_xyzrgb_points_to_ply
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     k_path = '/mast3r_ign/output/intrinsic.txt'

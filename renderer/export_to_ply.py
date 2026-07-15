@@ -1,19 +1,8 @@
-# debug_render.py
-import torch
-from pytorch3d.structures import Meshes
-from pytorch3d.renderer import (
-    PerspectiveCameras,
-    MeshRenderer,
-    MeshRasterizer,
-    RasterizationSettings,
-    SoftPhongShader,
-    TexturesVertex
-)
-
-
+import numpy as np
+import open3d as o3d
 
 def export_ply(mesh, path="debug.ply"):
-    import open3d as o3d
+
 
     verts = mesh.verts_packed().detach().cpu().numpy()
     faces = mesh.faces_packed().detach().cpu().numpy()
@@ -28,7 +17,7 @@ def export_ply(mesh, path="debug.ply"):
     print("Saved:", path)
 
 def export_xyzrgb_points_to_ply(Xg, Yg, Zg, rgb, path="points_rgb.ply"):
-    import numpy as np
+
 
     # --- tensors → numpy ---
     if hasattr(Xg, "detach"):
