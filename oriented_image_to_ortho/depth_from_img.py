@@ -4,6 +4,7 @@ import os
 sys.path.insert(0, '/mast3r_ign')
 
 import numpy as np
+import matplotlib.pyplot as plt
 from mast3r.model import AsymmetricMASt3R
 from mast3r.demo import get_reconstructed_scene
 
@@ -69,5 +70,10 @@ if __name__ == '__main__':
     weights_path = './docker/files/checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth'
     img_rgb,img_depth,intrinsics,extrinsics = infer_depth_from_img(weights_path = weights_path, imgfilename='./ign_samples/rgb_sample.jpg')
     cli_write_results_to_files(img_rgb,img_depth,intrinsics,extrinsics, outdir='./ign_samples/output')
+    # plt.figure()
+    # plt.imshow(img_depth, cmap='viridis', vmin=0.0, vmax=30.0)
+    # plt.colorbar()
+    # plt.title('Depth Map')
+    # plt.show()
     
 
