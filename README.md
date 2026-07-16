@@ -100,6 +100,18 @@ This pipeline creates a georeferenced ortho from:
 - GSD 
 - z_scale to be estimated manually 
 
+## Conclusions and perspectives
+The provided pipeline anable to generate ortho-views from street-level images. There are multiple possible usages:
+
+### Refine the image georeferencing 
+If initial georeferencing parameters are known ```(R,T)``` the actual tools enable to compare the resulting ortho agains the reference ortho-images in RGE. The problem to solve is an image alignement for which: 
+- (R,T) are to be refined
+- Scale factor is to be resolved
+
+### Generate reference data for learning new model adapted to aligning aerial-street level images 
+Once the georeferencing of existing data is refined they can be used as reference data to learn another model like that of [AerialMegaDepth](https://github.com/kvuong2711/aerial-megadepth) to adapt the same structure/architecture of model to our problem namely: street-level image georeferencing. 
+
+### Use refinement approach for georeferencing by relaxing the unknowns ```(R,T)```
 
 
 
