@@ -1,50 +1,92 @@
-# Matching street-level images with ortho or aerial images
-## Build docker
-```
-docker compose -f docker-compose-cuda.yml run --build --rm --remove-orphans mast3r-demo
-```
-
-```
-#on the host 
-xhost +local:docker
-docker compose -f docker-compose-cuda.yml run --build --rm   -e DISPLAY=$DISPLAY   -v /tmp/.X11-unix:/tmp/.X11-unix   mast3r-demo
+# Mast3R: IGN's fork
+This fork is done to test the [Mast3R](https://github.com/naver/mast3r) functionalities for street-level image localization using orthophotos or oriented arial images as reference.
 
 
-# add this to the code 
-import matplotlib
-matplotlib.use("TkAgg")
+| Oriented Street-level image | Georeferenced ortho-image  |
+|---------|---------|
+| <img src="./ign_samples/rgb_sample.jpg" width="300" height="200" alt="alt text"> | <img src="./ign_samples/qgis_ortho.png" width="300" height="200" alt="alt text"> |
+| *Image & pose (R,T)* | *Ortho-view in QGis* | 
 
-```
+## Installation
+```bash
+git clone  --recursive https://github.com/bsoheilian/mast3r_ign
+cd mast3r_ign/docker #only cuda based docker is handled for the moment
 
-Most likely it is a memory/shape scaling issue: at load_image(..., size=512) the model creates much larger tensors, so GPU RAM use grows quickly (often near-quadratic with resolution). At 128, it stays under limits, so the failure disappears.
+#build cuda docker image
+docker_build
 
-Run it once and capture the real traceback:
-
-
-docker compose -f docker-compose-cuda.yml run --build --rm -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix mast3r-demo 2>&1 | tee /tmp/mast3r_run.log
-Then check for the exact failure:
-
-
-grep -Ei 'out of memory|cuda|cudnn|cublas|runtimeerror|shape|size mismatch' /tmp/mast3r_run.log
-And monitor GPU memory while running:
-
-
-watch -n 0.5 nvidia-smi
-None
-
-
-
-```
-python demo_dust3r_ga.py --weights ./docker/files/checkpoints/checkpoint-aerial-mast3r.pth image_size 518 --device cuda
+#run docker 
+docker_run
 ```
 
-The very first test to find matches between ground level and aerial images are not very convincing.
-The problem does not seems to be very hard to resolve when roadmarking ar visible in both images. 
-some ideas to explore: 
-- inverse perspective rectification on ground level images before injecting into Mast3r 
-- at the same tome to remove the distortion -> ori operation to implement
-- check if 3D reconstrction from Mast3r is accessible , it yes it can be used to generate orthos and then match them to aerial orthos (probably without AI)
-- test AI based marking extractions and matching 
+## Checkpoint
+Download Mast3r model:
+```bash
+# to run from host befor running docker (docker_run)
+mkdir -p checkpoints/
+wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth -P checkpoints/
+```
+
+## Usage
+There are two main functionalities. Both can be run from the docker container. The minimal data to run examples are included in ```mast3r_ign/ign_samples```
+
+### ign_samples directory structure
+```
+ign_samples/
+├── rgb_sample.jpg  #input rgb image
+├── R.txt           # Rotation matrix (image2world)
+├── T.txt           # 3D coordinates of camera center in world system
+└── output/         # outputs will be written here
+```
+
+### Depth image inference from a single image
+Mast3r inference is used to obtain a depth map from one single image:
+```bash
+# run the example for depth from single image
+cd mast3r_ign
+python oriented_image_to_ortho/depth_from_img.py
+```
+This will provide in ```./ign_samples/output```:
+- `rgb_image.npy` - Resampled rgb image (max(H,W) = 512)
+- `depth_map.png` - Depth value per pixel (max(H,W) = 512)
+- `pose.txt`      - unused projection matrix (ignore it)
+- `intrinsic.txt` - intrinsic matrix compatible with rgb_image.npy
+
+<div align="center">
+  <img src="./ign_samples/depth_fig.png" width="300" height="200" alt="alt text">
+  
+  *Provided depth map*
+</div>
+
+### 3D reconstruction and ortho-image generation
+Depth map together with the estimated intrinsic parameters enable to project every pixel to 3D. Extrinsic parameters ```(R,T)``` are used to georeference the 3D points (cf. Fig. below). However the scale of depth is unknown. It can be obtained by measuring a known distance in 3D (width of a zebra-crossing for example). 
+
+<div align="center">
+  <img src="./ign_samples/3D_fig.png" width="300" height="200" alt="alt text">
+  
+  *Georeferences 3D points*
+</div>
+
+The pytorch3d functionallities are used to generate an ortho-view on GPUs. 
+
+The following command shows an example of how to generate an ortho-image from a color images, depth-map and extrinsics parameters:
+
+```bash
+cd mast3r_ign
+python oriented_image_to_ortho/ortho_from_dept_and_ori.py
+```
+This will provide in ```./ign_samples/output```:
+- `ortho.png` - colored ortho-image 
+- `ortho.vrt` - Georeferencement file
+
+<div align="center">
+  <img src="./ign_samples/qgis_ortho.png" width="300" height="200" alt="alt text">
+  
+  *Georeferenced ortho image of 5 cm GSD overlayed on aerial-based ortho-image in QGis*
+</div>
+
+### Full pipline from street-level image to ortho-image
+To continue full pipeline with command line ...
 
 
 
@@ -54,10 +96,3 @@ some ideas to explore:
 
 
 
-
-&
-123
-ROSE
-PAPA
-MAMAN
-ARIO
