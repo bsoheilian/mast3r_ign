@@ -1,5 +1,5 @@
-# Mast3R: IGN's fork
-This fork is done to test the [Mast3R](https://github.com/naver/mast3r) functionalities for street-level image localization using orthophotos or oriented arial images as reference.
+# MAST3R: IGN's fork
+This fork is done to test the [MAST3R](https://github.com/naver/mast3r) functionalities for street-level image localization using orthophotos or oriented aerial images as reference.
 
 
 | Oriented Street-level image | Georeferenced ortho-image  |
@@ -9,20 +9,20 @@ This fork is done to test the [Mast3R](https://github.com/naver/mast3r) function
 
 ## Installation
 ```bash
-git clone  --recursive https://github.com/bsoheilian/mast3r_ign
-cd mast3r_ign/docker #only cuda based docker is handled for the moment
+git clone --recursive https://github.com/bsoheilian/mast3r_ign
+cd mast3r_ign/docker #only CUDA-based docker is handled for now
 
-#build cuda docker image
+#build CUDA docker image
 docker_build
 
-#run docker 
+#run docker
 docker_run
 ```
 
 ## Checkpoint
-Download Mast3r model:
+Download the MAST3R model:
 ```bash
-# to run from host befor running docker (docker_run)
+# to run from host before running docker (docker_run)
 mkdir -p checkpoints/
 wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth -P checkpoints/
 ```
@@ -67,26 +67,26 @@ Depth map together with the estimated intrinsic parameters enable to project eve
   *Georeferences 3D points*
 </div>
 
-The pytorch3d functionallities are used to generate an ortho-view on GPUs. 
+The PyTorch3D functionalities are used to generate an ortho-view on GPUs. 
 
-The following command shows an example of how to generate an ortho-image from a color images, depth-map and extrinsics parameters:
+The following command shows an example of how to generate an ortho-image from color images, a depth map, and extrinsic parameters:
 
 ```bash
 cd mast3r_ign
 python oriented_image_to_ortho/ortho_from_dept_and_ori.py
 ```
 This will provide in ```./ign_samples/output```:
-- `ortho.png` - colored ortho-image 
-- `ortho.vrt` - Georeferencement file
+- `ortho.png` - colored ortho-image
+- `ortho.vrt` - Georeferencing file
 
 <div align="center">
   <img src="./ign_samples/qgis_ortho.png" width="300" height="200" alt="alt text">
   
-  *Georeferenced ortho image of 5 cm GSD overlayed on aerial-based ortho-image in QGis*
+  *Georeferenced ortho image of 5 cm GSD overlaid on aerial-based ortho-image in QGIS*
 </div>
 
-### Full pipline from street-level image to ortho-image
-The full pipline can be run using the following command: 
+### Full pipeline from street-level image to ortho-image
+The full pipeline can be run using the following command: 
 ```bash
 cd mast3r_ign
 # to run an example using the included data in the package
@@ -94,7 +94,7 @@ python run_ori_img_to_ortho.py --out_dir_host /FULL_PATH_TO/mast3r_ign/ign_sampl
 #to run on other examples use help
 python run_ori_img_to_ortho.py --help
 ```
-This pipline create a georeferenced ortho from: 
+This pipeline creates a georeferenced ortho from: 
 - rgb image
 - rotation and translation in RGF93 system.
 - GSD 
