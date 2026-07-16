@@ -236,7 +236,10 @@ def get_reconstructed_scene(outdir, gradio_delete_cache, model, retrieval_model,
                                     **kw)
     if cli_call:
         # return cli_write_results_to_files(scene, outdir)
-          return to_numpy(scene.imgs[0]), to_numpy(scene.get_depthmaps()[0]), to_numpy(scene.intrinsics.cpu()[0]), to_numpy(scene.get_im_poses().cpu()[0])
+        rgb_img_out = to_numpy(scene.imgs[0])
+        depth_img_out = to_numpy(scene.get_depthmaps()[0])
+        depth_img_out = depth_img_out.reshape(rgb_img_out.shape[0], -1)  # Reshape to (H, W)
+        return rgb_img_out, depth_img_out, to_numpy(scene.intrinsics.cpu()[0]), to_numpy(scene.get_im_poses().cpu()[0])
     
     
     if current_scene_state is not None and \

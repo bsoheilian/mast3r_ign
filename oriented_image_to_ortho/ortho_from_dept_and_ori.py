@@ -52,9 +52,7 @@ if __name__ == "__main__":
     print(f"Intrinsic matrix K:\n{K}\nRotation matrix R:\n{R}\nTranslation vector C:\n{C}")
 
     img_rgb = np.load('./ign_samples/output/rgb_image.npy')
-    H, W, _ = img_rgb.shape
     img_depth = np.load('./ign_samples/output/depth_image.npy')
-    img_depth = img_depth.reshape(H, -1)  # Reshape to (H, W)
     print(f"RGB image shape: {img_rgb.shape}, dtype: {img_rgb.dtype}, min: {img_rgb.min()}, max: {img_rgb.max()}, type: {type(img_rgb)}")
     print(f"Depth image shape: {img_depth.shape}, dtype: {img_depth.dtype}, type: {type(img_depth)}, min: {img_depth.min()}, max: {img_depth.max()}")
 
