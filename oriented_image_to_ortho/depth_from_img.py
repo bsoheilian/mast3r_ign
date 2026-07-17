@@ -10,7 +10,7 @@ from mast3r.demo import get_reconstructed_scene
 
 def cli_write_results_to_files(img_rgb,img_depth,intrinsics,extrinsics, outdir):
  
-
+    os.makedirs(outdir, exist_ok=True)
 
     img_rgb_file = os.path.join(outdir, 'rgb_image.npy')
     img_depth_file = os.path.join(outdir, 'depth_image.npy')
