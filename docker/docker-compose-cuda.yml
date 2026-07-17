@@ -26,6 +26,7 @@ services:
       - no_proxy=localhost,127.0.0.1,*.ign.fr
     volumes:
       - ../:/mast3r_ign  #relative path shall be set from where the actual YML file is placed.
+      - ../../dchan:/dchan #for dchan project
       - ../../../data/chantier_lilles/:/mast3r_ign/data/chantier_lilles
     devices:
       - /dev/dri:/dev/dri #required for rendering and display 
