@@ -90,7 +90,7 @@ The full pipeline can be run using the following command:
 ```bash
 cd mast3r_ign
 # to run an example using the included data in the package
-python run_ori_img_to_ortho.py --out_dir_host /FULL_PATH_TO/mast3r_ign/ign_samples/output/ --z_scale 2.5
+python run_ori_img_to_ortho.py --z_scale 2.5 --trans ./ign_samples/T.txt --rot ./ign_samples/R.txt
 #to run on other examples use help
 python run_ori_img_to_ortho.py --help
 ```

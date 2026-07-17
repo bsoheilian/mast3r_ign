@@ -19,5 +19,7 @@ fi
 
 docker compose -f docker-compose-cuda.yml run --build --rm \
 	-e DISPLAY="${DISPLAY:-}" \
+	-e HOST_MAST3R_IGN_ROOT="$(dirname "$SCRIPT_DIR")" \
+	-e HOST_DOCKER_DIR="$SCRIPT_DIR" \
 	-v /tmp/.X11-unix:/tmp/.X11-unix \
 	mast3r-cuda "$@"

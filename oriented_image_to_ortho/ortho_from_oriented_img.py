@@ -46,7 +46,7 @@ if __name__ == "__main__":
     img_rgb = './ign_samples/rgb_sample.jpg'
     rotation = './ign_samples/R.txt'
     translation ='./ign_samples/T.txt'
-    
+    from mast3r.utils.host_path import container_to_host
     oriented_img_to_ortho(weights_path, img_rgb, rotation, translation, z_scale=2.5, gsd=0.05,
                           output_dir="./ign_samples/output/",
-                          str_output_dir_in_host="/home/BSoheilian/work/dev/mast3r_ign/ign_samples/output/")
+                          str_output_dir_in_host=container_to_host("./ign_samples/output/"))
