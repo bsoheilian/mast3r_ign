@@ -105,7 +105,7 @@ The provided pipeline anable to generate ortho-views from street-level images. T
 
 ### Refine the image georeferencing 
 If initial georeferencing parameters are known ```(R,T)``` the actual tools enable to compare the resulting ortho agains the reference ortho-images in RGE. The problem to solve is an image alignement for which: 
-- (R,T) are to be refined
+- ```(R,T)``` are to be refined
 - Scale factor is to be resolved
 
 ### Generate reference data for learning new model adapted to aligning aerial-street level images 
@@ -114,7 +114,7 @@ Once the georeferencing of existing data is refined they can be used as referenc
 ### Use refinement approach for georeferencing by relaxing the unknowns ```(R,T)```
 
 
-
+ 
 
 
 
