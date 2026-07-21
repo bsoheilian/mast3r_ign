@@ -97,6 +97,8 @@ class TexturedMesh3D:
         self.Zinsertion = 0.0
 
         # translate the double coordinates to float for rendering by subtracting Xmin and Ymin
+        # The created mesh will not be in the original coordinate system, but will be shifted to start from (0, 0) in X and Y.
+        # This translation will be taken into account for vrt creation and georeferencing.
         self.Xg = (self.Xg - self.Xmin).float()
         self.Yg = (self.Yg - self.Ymin).float() 
         self.Zg = self.Zg.float()

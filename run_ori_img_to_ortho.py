@@ -42,7 +42,7 @@ def get_args_parser():
     parser.add_argument('--gsd',            default=0.1, type=float, help='ground sample distance')
     parser.add_argument('--out_dir',        default='./ign_samples/output', type=str, help='path to the output directory')
     parser.add_argument('--debug_tmp_copy_dir', default=None, type=str, help='if set, copy temp rgb/rotation/translation files here for debugging')
-    
+    parser.add_argument('--write_ply',      default=False, type=bool, help='if set to True, write PLY files for the mesh and point cloud')
 
     return parser
 
@@ -124,4 +124,5 @@ if __name__ == '__main__':
             gsd=args.gsd,
             output_dir=args.out_dir,
             str_output_dir_in_host=container_to_host(args.out_dir),
+            write_ply=args.write_ply
         )

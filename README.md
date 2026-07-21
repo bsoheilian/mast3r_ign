@@ -27,6 +27,17 @@ mkdir -p checkpoints/
 wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth -P checkpoints/
 ```
 
+## Dependency
+> ⚠️ **WARNING:** This package uses `oriented_image` from the [dchan](https://github.com/IGNF/dchan) repository. It is mounted when the Docker container runs. This needs to be refactored. For now, before running Docker (from the host), checkout the repository:
+
+```bash
+    # The dchan repository should be checked out and mounted to Docker here:
+    # ../../dchan:/dchan #for dchan project
+    cd mast3r_ign/..
+    git clone --branch test/oriented_image https://github.com/IGNF/dchan.git
+```
+
+
 ## Usage
 There are two main functionalities. Both can be run from the docker container. The minimal data to run examples are included in ```mast3r_ign/ign_samples```
 

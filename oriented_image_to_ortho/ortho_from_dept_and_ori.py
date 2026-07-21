@@ -1,6 +1,7 @@
 
 import sys
 from pathlib import Path
+from datetime import datetime
 
 from matplotlib import pyplot as plt
 
@@ -13,16 +14,22 @@ from renderer.export_to_ply import export_ply, export_xyzrgb_points_to_ply
 
 
 def dept_and_ori_to_ortho(img_rgb, img_depth, intrinsics, rotation, translation, z_scale=1.0, gsd=0.05, 
-                          output_dir="./output", output_ortho_img_filename="ortho", str_output_dir_in_host=None ):
+                          output_dir="./output", output_ortho_img_filename="ortho", str_output_dir_in_host=None, 
+                          write_ply=False):
 
     ori = Orientation.from_arrays(intrinsics, rotation, translation)
 
     Xcam, Ycam, Zcam = ori.apply_K_torch(img_depth, z_scale=z_scale, device="cuda")
     Xg, Yg, Zg = ori.apply_ext(Xcam, Ycam, Zcam, direction="cam2world")
     output_dir_path = Path(output_dir)
-    export_xyzrgb_points_to_ply(Xg, Yg, Zg, 255 * img_rgb, path=output_dir_path / "points_world_PR.ply")
+
+
+   
     mesh = TexturedMesh3D(Xg, Yg, Zg, img_rgb)
-    # export_ply(mesh.mesh, path="./output/refactor_mesh.ply") 
+    if write_ply:
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        export_ply(mesh.mesh, path=output_dir_path / f"mesh_{timestamp_str}.ply")
+        export_xyzrgb_points_to_ply(Xg, Yg, Zg, 255 * img_rgb, path=output_dir_path / f"points_world_{timestamp_str}.ply")
 
     img = mesh.create_orth(
         gsd=gsd,
@@ -62,4 +69,5 @@ if __name__ == "__main__":
     dept_and_ori_to_ortho(img_rgb, img_depth, K, R, C, z_scale=2.5, gsd=0.05, 
                           output_dir=data_dir, 
                           output_ortho_img_filename="ortho", 
-                          str_output_dir_in_host=container_to_host(str(data_dir)))
+                          str_output_dir_in_host=container_to_host(str(data_dir)),
+                          write_ply=True)

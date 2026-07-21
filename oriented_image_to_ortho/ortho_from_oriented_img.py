@@ -12,7 +12,7 @@ from oriented_image_to_ortho.ortho_from_dept_and_ori import dept_and_ori_to_orth
 
 
 def oriented_img_to_ortho(weights_path, img_rgb, rotation_file, translation_file, z_scale=1.0, gsd=0.05, 
-                          output_dir="./output", str_output_dir_in_host=None ):
+                          output_dir="./output", str_output_dir_in_host=None, write_ply=False ):
     """
     Convert an oriented image to an orthographic image using depth and orientation information.
 
@@ -42,7 +42,7 @@ def oriented_img_to_ortho(weights_path, img_rgb, rotation_file, translation_file
 
     dept_and_ori_to_ortho(img_rgb_py, img_depth, intrinsics, rotation, translation, z_scale=z_scale, gsd=gsd,
                           output_dir=output_dir, output_ortho_img_filename=output_ortho_img_filename,
-                          str_output_dir_in_host=str_output_dir_in_host)
+                          str_output_dir_in_host=str_output_dir_in_host, write_ply = write_ply)
     
 if __name__ == "__main__":
     weights_path = './docker/files/checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth'
@@ -52,4 +52,5 @@ if __name__ == "__main__":
     from mast3r.utils.host_path import container_to_host
     oriented_img_to_ortho(weights_path, img_rgb, rotation, translation, z_scale=2.5, gsd=0.05,
                           output_dir="./ign_samples/output/",
-                          str_output_dir_in_host=container_to_host("./ign_samples/output/"))
+                          str_output_dir_in_host=container_to_host("./ign_samples/output/"), 
+                          write_ply=True)

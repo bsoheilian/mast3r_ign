@@ -143,35 +143,6 @@ def get_3D_model_from_scene(silent, scene_state, min_conf_thr=2, as_pointcloud=F
     return _convert_scene_output_to_glb(outfile, rgbimg, pts3d, msk, focals, cams2world, as_pointcloud=as_pointcloud,
                                         transparent_cams=transparent_cams, cam_size=cam_size, silent=silent)
 
-def cli_write_results_to_files(scene, outdir):
-    """
-    Write the results of the scene reconstruction to files for CLI usage.
-    """
-    if scene is None or outdir is None:
-        print("No scene or output file provided.")
-        return
-    
-    rgbimgs = scene.imgs
-    cams2worlds = scene.get_im_poses().cpu()
-    deptmaps = scene.get_depthmaps()
-    intrinsics = scene.intrinsics.cpu()
-
-    rgbimgs_file = os.path.join(outdir, 'rgb_image.npy')
-    cams2world_file = os.path.join(outdir, 'pose.txt')
-    deptmaps_file = os.path.join(outdir, 'depth_image.npy')
-    intrinsics_file = os.path.join(outdir, 'intrinsic.txt')
-
-        
-    np.save(rgbimgs_file, to_numpy(rgbimgs[0]))
-    np.save(deptmaps_file, to_numpy(deptmaps[0]))
-    np.savetxt(cams2world_file, to_numpy(cams2worlds[0]))
-    np.savetxt(intrinsics_file, to_numpy(intrinsics[0]))
-
-    print(f"Saved RGB image of size {rgbimgs[0].shape} to: {rgbimgs_file}")
-    print(f"Saved depth map of size {deptmaps[0].shape} to: {deptmaps_file}")
-    print(f"Saved camera pose of size {cams2worlds[0]} to: {cams2world_file}")
-    print(f"Saved intrinsic matrix of size {intrinsics[0]} to: {intrinsics_file}")
-
 
 def get_reconstructed_scene(outdir, gradio_delete_cache, model, retrieval_model, device, silent, image_size,
                             current_scene_state, filelist, optim_level, lr1, niter1, lr2, niter2, min_conf_thr,
