@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y \
     bash-completion \
     vim \
     less \
-    nano \    
+    nano \
     git \
     libglib2.0-0 \
     build-essential \
