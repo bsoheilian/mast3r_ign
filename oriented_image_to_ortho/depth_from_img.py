@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-import sys
 import os
-sys.path.insert(0, '/mast3r_ign')
+import sys
+from pathlib import Path
 
+# Allow running as a script from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 import matplotlib.pyplot as plt
 from mast3r.model import AsymmetricMASt3R
