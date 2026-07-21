@@ -140,21 +140,24 @@ class TexturedMesh3D:
         u, v = torch.meshgrid(xs, ys, indexing="xy")
         self.verts_uvs = torch.stack([u, v], dim=-1).reshape(-1, 2)
 
-        # Create faces by connecting adjacent grid points
-        faces = []
-        for i in range(self.H - 1):
-            for j in range(self.W - 1):
-                # Get indices of the four corners of each grid cell
-                top_left = i * self.W + j
-                top_right = i * self.W + (j + 1)
-                bottom_left = (i + 1) * self.W + j
-                bottom_right = (i + 1) * self.W + (j + 1)
-                
-                # Create two triangles per grid cell
-                faces.append([top_left, bottom_left, top_right])
-                faces.append([top_right, bottom_left, bottom_right])
-        
-        self.faces = torch.tensor(faces, dtype=torch.long, device=self.device)  # Shape: (2*(H-1)*(W-1), 3)
+        # Create faces by connecting adjacent grid points (vectorized)
+        ii = torch.arange(self.H - 1, device=self.device)
+        jj = torch.arange(self.W - 1, device=self.device)
+        I, J = torch.meshgrid(ii, jj, indexing="ij")
+
+        top_left = I * self.W + J
+        top_right = top_left + 1
+        bottom_left = top_left + self.W
+        bottom_right = bottom_left + 1
+
+        faces = torch.stack(
+            [
+                torch.stack([top_left, bottom_left, top_right], dim=-1),
+                torch.stack([top_right, bottom_left, bottom_right], dim=-1),
+            ],
+            dim=0,
+        ).reshape(-1, 3)
+        self.faces = faces.to(dtype=torch.long)
         if verbose:
             print(f"[_create_mesh_texture_indexes] Created mesh with {self.vertices.shape[0]} vertices and {self.faces.shape[0]} faces.")
             print(f"[_create_mesh_texture_indexes] Vertices dtype: {self.vertices.dtype}, Faces dtype: {self.faces.dtype}")
