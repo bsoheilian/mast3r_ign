@@ -150,10 +150,10 @@ When using a pair of intrinsics and depth maps to project points in 3D, one can 
 
 
 ## Conclusions and perspectives
-The provided pipeline anable to generate ortho-views from street-level images. There are multiple possible usages:
+The provided pipeline enables the generation of ortho-views from street-level images. There are multiple possible usages:
 
-### Refine the image georeferencing 
-If initial georeferencing parameters are known ```(R,T)``` the actual tools enable to compare the resulting ortho agains the reference ortho-images in RGE. The problem to solve is an image alignement for which: 
+### Refine the image georeferencing
+If the initial georeferencing parameters are known ```(R,T)```, the current tools make it possible to compare the resulting ortho against the reference ortho-images in RGE. The problem to solve is an image alignment for which:
 - ```(R,T)``` are to be refined
 - Scale factor is to be resolved
 
@@ -164,8 +164,6 @@ Once the georeferencing of existing data is refined they can be used as referenc
 
 
  
-
-
 
 
 
