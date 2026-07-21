@@ -1,9 +1,12 @@
 
 import sys
 from pathlib import Path
+
 import numpy as np
 
-sys.path.insert(0, '/mast3r_ign')
+# Allow running as a script from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from oriented_image_to_ortho.depth_from_img import infer_depth_from_img
 from oriented_image_to_ortho.ortho_from_dept_and_ori import dept_and_ori_to_ortho
 
