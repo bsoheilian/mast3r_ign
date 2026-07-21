@@ -127,11 +127,22 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-*.png
-*.jpg
-*.tif
-*.ply
-output/*
-data/*
-docker/files/checkpoints/checkpoint-aerial-mast3r.pth
 docker/files/checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth
+docker/files/checkpoints/checkpoint-aerial-mast3r.pth
+
+debug_render.png
+data/*.png
+data/*.jpg
+output/*png
+output/*jpg
+*.pth
+ign_samples/output/*
+data/*
+output/*
+ign_samples/output*/*
+ign_samples/Lille-*
+ign_samples/rgb_img_file_20260717_141722_sss4.jpg
+ign_samples/rgb_img_file_20260717_141722.jpg
+ign_samples/rotation_file_20260717_141722.txt
+ign_samples/translation_file_20260717_141722.txt
+True/* 

@@ -1,0 +1,73 @@
+
+import sys
+from pathlib import Path
+from datetime import datetime
+
+from matplotlib import pyplot as plt
+
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import numpy as np
+from renderer.mesh_from_3D import TexturedMesh3D
+from ori_img_utils.ori import Orientation
+from renderer.export_to_ply import export_ply, export_xyzrgb_points_to_ply
+
+
+def dept_and_ori_to_ortho(img_rgb, img_depth, intrinsics, rotation, translation, z_scale=1.0, gsd=0.05, 
+                          output_dir="./output", output_ortho_img_filename="ortho", str_output_dir_in_host=None, 
+                          write_ply=False):
+
+    ori = Orientation.from_arrays(intrinsics, rotation, translation)
+
+    Xcam, Ycam, Zcam = ori.apply_K_torch(img_depth, z_scale=z_scale, device="cuda")
+    Xg, Yg, Zg = ori.apply_ext(Xcam, Ycam, Zcam, direction="cam2world")
+    output_dir_path = Path(output_dir)
+
+
+   
+    mesh = TexturedMesh3D(Xg, Yg, Zg, img_rgb)
+    if write_ply:
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        export_ply(mesh.mesh, path=output_dir_path / f"mesh_{timestamp_str}.ply")
+        export_xyzrgb_points_to_ply(Xg, Yg, Zg, 255 * img_rgb, path=output_dir_path / f"points_world_{timestamp_str}.ply")
+
+    img = mesh.create_orth(
+        gsd=gsd,
+        profile=True,
+        safe_raster=True,
+        cull_backfaces=True,
+        use_hard_shader=True,
+        faces_per_pixel = 1,
+        blur_radius = 1e-30,
+        verbose=True
+    )
+    ortho_img_full_path = output_dir_path / f"{output_ortho_img_filename}.png"
+    plt.imsave(ortho_img_full_path, img.cpu().numpy())
+    ortho_img_full_path_in_host = Path(str_output_dir_in_host) / f"{output_ortho_img_filename}.png" if str_output_dir_in_host is not None else ortho_img_full_path
+    mesh._write_vrt_qgis_safe(
+        vert_file_path=output_dir_path / f"{output_ortho_img_filename}.vrt",
+        ortho_img_path=ortho_img_full_path_in_host,
+            gsd=gsd,
+            ortho_img_size=(img.shape[0], img.shape[1])
+        )
+
+
+
+if __name__ == "__main__":
+
+    data_dir = Path('./ign_samples/output/')
+    K = np.loadtxt(data_dir / 'intrinsic.txt', dtype=np.float32)
+    R = np.loadtxt('./ign_samples/R.txt', dtype=np.float64)
+    C = np.loadtxt('./ign_samples/T.txt', dtype=np.float32)
+    print(f"Intrinsic matrix K:\n{K}\nRotation matrix R:\n{R}\nTranslation vector C:\n{C}")
+
+    img_rgb = np.load(data_dir / 'rgb_image.npy')
+    img_depth = np.load(data_dir / 'depth_image.npy')
+    print(f"RGB image shape: {img_rgb.shape}, dtype: {img_rgb.dtype}, min: {img_rgb.min()}, max: {img_rgb.max()}, type: {type(img_rgb)}")
+    print(f"Depth image shape: {img_depth.shape}, dtype: {img_depth.dtype}, type: {type(img_depth)}, min: {img_depth.min()}, max: {img_depth.max()}")
+    from mast3r.utils.host_path import container_to_host
+    dept_and_ori_to_ortho(img_rgb, img_depth, K, R, C, z_scale=2.5, gsd=0.05, 
+                          output_dir=data_dir, 
+                          output_ortho_img_filename="ortho", 
+                          str_output_dir_in_host=container_to_host(str(data_dir)),
+                          write_ply=True)

@@ -1,29 +1,56 @@
-FROM nvcr.io/nvidia/pytorch:24.01-py3
+FROM nvcr.io/nvidia/pytorch:25.03-py3
 
-LABEL description="Docker container for MASt3R with dependencies installed. CUDA VERSION"
-ENV DEVICE="cuda"
-ENV MODEL="MASt3R_ViTLarge_BaseDecoder_512_dpt.pth"
 ARG DEBIAN_FRONTEND=noninteractive
 
+# System deps
 RUN apt-get update && apt-get install -y \
-    git=1:2.34.1-1ubuntu1.10 \
-    libglib2.0-0=2.72.4-0ubuntu2.2 \
-    && apt-get clean \
+    bash-completion \
+    vim \
+    less \
+    nano \
+    git \
+    libglib2.0-0 \
+    build-essential \
+    ninja-build \
+    cmake \
+    libopenblas-dev \
+    libgl1 \
+    python3-tk \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --recursive https://github.com/naver/mast3r /mast3r
-WORKDIR /mast3r/dust3r
-RUN pip install -r requirements.txt
-RUN pip install -r requirements_optional.txt
-RUN pip install opencv-python==4.8.0.74
+RUN touch /root/.bashrc
+RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' /root/.bashrc
+RUN echo "source /etc/bash_completion" >> /root/.bashrc && \
+    echo "alias ll='ls -alF --color=auto'" >> /root/.bashrc && \
+    echo "alias la='ls -A --color=auto'" >> /root/.bashrc && \
+    echo "alias grep='grep --color=auto'" >> /root/.bashrc
 
-WORKDIR /mast3r/dust3r/croco/models/curope/
-RUN python setup.py build_ext --inplace
+# Python deps (minimal copy ONLY for caching)
+COPY requirements.txt /tmp/requirements.txt
+COPY dust3r/requirements.txt /tmp/dust3r_requirements.txt
+COPY dust3r/requirements_optional.txt /tmp/dust3r_requirements_optional.txt
 
-WORKDIR /mast3r
-RUN pip install -r requirements.txt
+RUN pip install \
+    -r /tmp/dust3r_requirements.txt \
+    -r /tmp/dust3r_requirements_optional.txt \
+    -r /tmp/requirements.txt \
+    opencv-python==4.8.0.74 \
+    "gradio>=4.0,<6.0" \
+    open3d
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
-ENTRYPOINT ["/entrypoint.sh"]
+
+
+RUN git clone https://github.com/facebookresearch/pytorch3d.git /opt/pytorch3d && \
+    cd /opt/pytorch3d && \
+    git checkout v0.7.9 && \
+    export USE_CUDA=1 && \
+    export FORCE_CUDA=1 && \
+    export CUDA_HOME=/usr/local/cuda && \
+    export TORCH_CUDA_ARCH_LIST="12.0" && \
+    pip install -e .
+
+  
+
+# Runtime location (mounted repo)
+WORKDIR /mast3r_ign

@@ -131,6 +131,7 @@ def get_3D_model_from_scene(silent, scene_state, min_conf_thr=2, as_pointcloud=F
     rgbimg = scene.imgs
     focals = scene.get_focals().cpu()
     cams2world = scene.get_im_poses().cpu()
+        
 
     # 3D pointcloud from depthmap, poses and intrinsics
     if TSDF_thresh > 0:
@@ -146,7 +147,9 @@ def get_3D_model_from_scene(silent, scene_state, min_conf_thr=2, as_pointcloud=F
 def get_reconstructed_scene(outdir, gradio_delete_cache, model, retrieval_model, device, silent, image_size,
                             current_scene_state, filelist, optim_level, lr1, niter1, lr2, niter2, min_conf_thr,
                             matching_conf_thr, as_pointcloud, mask_sky, clean_depth, transparent_cams, cam_size,
-                            scenegraph_type, winsize, win_cyclic, refid, TSDF_thresh, shared_intrinsics, **kw):
+                            scenegraph_type, winsize, win_cyclic, refid, TSDF_thresh, shared_intrinsics, 
+                            cli_call = False, 
+                            **kw):
     """
     from a list of images, run mast3r inference, sparse global aligner.
     then run get_3D_model_from_scene
@@ -194,11 +197,22 @@ def get_reconstructed_scene(outdir, gradio_delete_cache, model, retrieval_model,
         cache_dir = tempfile.mkdtemp(suffix='_cache', dir=outdir)
     else:
         cache_dir = os.path.join(outdir, 'cache')
-    os.makedirs(cache_dir, exist_ok=True)
+    
+    if not cli_call:
+        os.makedirs(cache_dir, exist_ok=True)
     scene = sparse_global_alignment(filelist, pairs, cache_dir,
                                     model, lr1=lr1, niter1=niter1, lr2=lr2, niter2=niter2, device=device,
                                     opt_depth='depth' in optim_level, shared_intrinsics=shared_intrinsics,
-                                    matching_conf_thr=matching_conf_thr, **kw)
+                                    matching_conf_thr=matching_conf_thr, 
+                                    **kw)
+    if cli_call:
+        # return cli_write_results_to_files(scene, outdir)
+        rgb_img_out = to_numpy(scene.imgs[0])
+        depth_img_out = to_numpy(scene.get_depthmaps()[0])
+        depth_img_out = depth_img_out.reshape(rgb_img_out.shape[0], -1)  # Reshape to (H, W)
+        return rgb_img_out, depth_img_out, to_numpy(scene.intrinsics.cpu()[0]), to_numpy(scene.get_im_poses().cpu()[0])
+    
+    
     if current_scene_state is not None and \
         not current_scene_state.should_delete and \
             current_scene_state.outfile_name is not None:
