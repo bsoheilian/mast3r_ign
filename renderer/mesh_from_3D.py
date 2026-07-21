@@ -203,15 +203,17 @@ class TexturedMesh3D:
         # scale is defined to scale the mesh to fit in the [-1, 1] range for rendering.
         # scale = 2.0/(max(self.Xmax - self.Xmin, self.Ymax - self.Ymin))  # Scale to fit in [-1, 1] range
         
-        dx = self.Xmax - self.Xmin
-        dy = self.Ymax - self.Ymin
-        
-        W = int(math.ceil((self.Xmax - self.Xmin) / gsd))
-        H = int(math.ceil((self.Ymax - self.Ymin) / gsd))
-        
+        dx = float(self.Xmax - self.Xmin)
+        dy = float(self.Ymax - self.Ymin)
+        if dx == 0.0 or dy == 0.0:
+            raise ValueError(f"Degenerate mesh extents (dx={dx}, dy={dy}); cannot build ortho camera.")
+
+        W = int(math.ceil(dx / gsd))
+        H = int(math.ceil(dy / gsd))
+
         W = max(W, 1)
         H = max(H, 1)
-        
+
         rx = max(W / H, 1.0)
         ry = max(H / W, 1.0)
 
