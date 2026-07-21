@@ -12,11 +12,10 @@ from oriented_image_to_ortho.ortho_from_oriented_img import oriented_img_to_orth
 
 
 def _load_st_orientation():
-    """Import STOrientation from dchan with a small fallback path setup."""
+    """Import STOrientation and undistort_tif from dchan with a small fallback path setup."""
     try:
-        from dchan.core.utils.stereopolis_orientation import STOrientation
-
-        return STOrientation
+        from dchan.core.utils.stereopolis_orientation import STOrientation, undistort_tif
+        return STOrientation, undistort_tif
     except ModuleNotFoundError:
         candidates = [
             Path(__file__).resolve().parent.parent / "dchan",
@@ -27,7 +26,6 @@ def _load_st_orientation():
                 sys.path.insert(0, str(candidate.resolve()))
                 break
         from dchan.core.utils.stereopolis_orientation import STOrientation, undistort_tif
-
         return STOrientation, undistort_tif
 
 def get_args_parser():
