@@ -2,10 +2,18 @@ import numpy as np
 import open3d as o3d
 
 def export_ply(mesh, path="debug.ply"):
+    # Accept either a raw PyTorch3D mesh or a wrapper exposing `.mesh`.
+    if hasattr(mesh, "verts_packed") and hasattr(mesh, "faces_packed"):
+        p3d_mesh = mesh
+    elif hasattr(mesh, "mesh") and hasattr(mesh.mesh, "verts_packed") and hasattr(mesh.mesh, "faces_packed"):
+        p3d_mesh = mesh.mesh
+    else:
+        raise TypeError(
+            "export_ply expects a PyTorch3D Meshes object or a wrapper with a '.mesh' attribute."
+        )
 
-
-    verts = mesh.verts_packed().detach().cpu().numpy()
-    faces = mesh.faces_packed().detach().cpu().numpy()
+    verts = p3d_mesh.verts_packed().detach().cpu().numpy()
+    faces = p3d_mesh.faces_packed().detach().cpu().numpy()
 
     m = o3d.geometry.TriangleMesh()
     m.vertices = o3d.utility.Vector3dVector(verts)
