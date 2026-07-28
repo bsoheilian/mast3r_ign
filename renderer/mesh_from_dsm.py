@@ -590,6 +590,88 @@ def _select_best_camera_convention(
 	return best
 
 
+def _build_camera_from_convention(
+	mesh: "mesh_from_DSM",
+	rotation_matrix: Union[np.ndarray, torch.Tensor],
+	translation_vector: Union[np.ndarray, torch.Tensor, Tuple[float, float, float]],
+	focal_length_px: Union[float, Tuple[float, float]],
+	principal_point_px: Tuple[float, float],
+	image_size: Tuple[int, int],
+	rot_variant: str,
+	flip_variant: str,
+) -> PerspectiveCameras:
+	R_in = np.asarray(rotation_matrix, dtype=np.float32).reshape(3, 3)
+	C_in = np.asarray(translation_vector, dtype=np.float32).reshape(3)
+
+	if rot_variant == "R_img2world":
+		R_base = R_in
+	elif rot_variant == "R_world2img":
+		R_base = R_in.T
+	else:
+		raise ValueError(f"Unknown rot_variant: {rot_variant}")
+
+	flip_map = {
+		"no_axis_flip": np.eye(3, dtype=np.float32),
+		"flip_yz": np.diag([1.0, -1.0, -1.0]).astype(np.float32),
+		"flip_xz": np.diag([-1.0, 1.0, -1.0]).astype(np.float32),
+		"flip_xy": np.diag([-1.0, -1.0, 1.0]).astype(np.float32),
+	}
+	if flip_variant not in flip_map:
+		raise ValueError(f"Unknown flip_variant: {flip_variant}")
+
+	R_try = R_base @ flip_map[flip_variant]
+	return mesh.create_perspective_camera_from_rt(
+		R=R_try,
+		T=C_in,
+		focal_length_px=focal_length_px,
+		principal_point_px=principal_point_px,
+		image_size=image_size,
+	)
+
+
+def _save_variant_outputs(
+	mesh: "mesh_from_DSM",
+	rotation_matrix: Union[np.ndarray, torch.Tensor],
+	translation_vector: Union[np.ndarray, torch.Tensor, Tuple[float, float, float]],
+	focal_length_px: Union[float, Tuple[float, float]],
+	principal_point_px: Tuple[float, float],
+	image_size: Tuple[int, int],
+	rendered_rgb_path: Union[str, Path],
+	rendered_depth_path: Union[str, Path],
+	label: str,
+	rot_variant: str,
+	flip_variant: str,
+) -> None:
+	camera_variant = _build_camera_from_convention(
+		mesh=mesh,
+		rotation_matrix=rotation_matrix,
+		translation_vector=translation_vector,
+		focal_length_px=focal_length_px,
+		principal_point_px=principal_point_px,
+		image_size=image_size,
+		rot_variant=rot_variant,
+		flip_variant=flip_variant,
+	)
+	rgb_var, depth_var = mesh.render_perspective(camera=camera_variant, image_size=image_size)
+	valid_var = int(torch.isfinite(depth_var).sum().item())
+	total_var = int(depth_var.numel())
+
+	rgb_path = Path(rendered_rgb_path)
+	depth_path = Path(rendered_depth_path)
+	rgb_out = rgb_path.with_name(f"{rgb_path.stem}.{label}{rgb_path.suffix}")
+	depth_out = depth_path.with_name(f"{depth_path.stem}.{label}{depth_path.suffix}")
+
+	_save_rgb_image(rgb_var, rgb_out)
+	_save_depth_image(depth_var, depth_out)
+	preview_out = depth_out.with_suffix(".preview.png")
+	_save_depth_preview_image(depth_var, preview_out)
+
+	print(f"Variant {label}: valid depth {valid_var}/{total_var}")
+	print(f"Saved variant RGB to: {rgb_out}")
+	print(f"Saved variant depth to: {depth_out}")
+	print(f"Saved variant depth preview to: {preview_out}")
+
+
 def main(
 	dsm_tiff_path: Union[str, Path],
 	vrt_path: Union[str, Path],
@@ -698,6 +780,34 @@ def main(
 	print(f"Saved perspective RGB render to: {rendered_rgb_path}")
 	print(f"Saved perspective depth render to: {rendered_depth_path}")
 	print(f"Saved normalized depth preview to: {depth_preview_path}")
+
+	# Save key convention variants for visual comparison.
+	_save_variant_outputs(
+		mesh=mesh,
+		rotation_matrix=rotation_matrix,
+		translation_vector=translation_vector,
+		focal_length_px=focal_length_px,
+		principal_point_px=principal_point_px,
+		image_size=image_size,
+		rendered_rgb_path=rendered_rgb_path,
+		rendered_depth_path=rendered_depth_path,
+		label="R_img2world_no_axis_flip",
+		rot_variant="R_img2world",
+		flip_variant="no_axis_flip",
+	)
+	_save_variant_outputs(
+		mesh=mesh,
+		rotation_matrix=rotation_matrix,
+		translation_vector=translation_vector,
+		focal_length_px=focal_length_px,
+		principal_point_px=principal_point_px,
+		image_size=image_size,
+		rendered_rgb_path=rendered_rgb_path,
+		rendered_depth_path=rendered_depth_path,
+		label="R_img2world_flip_xy",
+		rot_variant="R_img2world",
+		flip_variant="flip_xy",
+	)
 
 	if show_rendered_images:
 		_show_rendered(render_rgb, render_depth)
