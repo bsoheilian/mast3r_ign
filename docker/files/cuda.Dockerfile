@@ -15,12 +15,22 @@ RUN apt-get update && apt-get install -y \
     cmake \
     libopenblas-dev \
     libgl1 \
+    libegl1 \
+    libusb-1.0-0 \
     python3-tk \
     && rm -rf /var/lib/apt/lists/*
 
-RUN touch /root/.bashrc
+RUN mkdir -p /root/.bash_history_data && touch /root/.bashrc /root/.bash_history_data/history
 RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' /root/.bashrc
-RUN echo "source /etc/bash_completion" >> /root/.bashrc && \
+RUN echo 'if [ -f /etc/bash_completion ]; then' >> /root/.bashrc && \
+    echo '    source /etc/bash_completion' >> /root/.bashrc && \
+    echo 'fi' >> /root/.bashrc && \
+    echo 'set -o emacs' >> /root/.bashrc && \
+    echo 'export HISTFILE=/root/.bash_history_data/history' >> /root/.bashrc && \
+    echo 'export HISTSIZE=10000' >> /root/.bashrc && \
+    echo 'export HISTFILESIZE=20000' >> /root/.bashrc && \
+    echo 'shopt -s histappend' >> /root/.bashrc && \
+    echo 'PROMPT_COMMAND="history -a; history -n${PROMPT_COMMAND:+; $PROMPT_COMMAND}"' >> /root/.bashrc && \
     echo "alias ll='ls -alF --color=auto'" >> /root/.bashrc && \
     echo "alias la='ls -A --color=auto'" >> /root/.bashrc && \
     echo "alias grep='grep --color=auto'" >> /root/.bashrc
@@ -36,10 +46,8 @@ RUN pip install \
     -r /tmp/requirements.txt \
     opencv-python==4.8.0.74 \
     "gradio>=4.0,<6.0" \
-    open3d
-
-
-
+    open3d \
+    rasterio
 
 RUN git clone https://github.com/facebookresearch/pytorch3d.git /opt/pytorch3d && \
     cd /opt/pytorch3d && \

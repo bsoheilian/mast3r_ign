@@ -5,6 +5,8 @@ services:
     hostname: mast3r-ign-cuda-container
     network_mode: host  # for runtime, the container will use the host network
     entrypoint: ["bash"]
+    stdin_open: true
+    tty: true
     build:
       context: ../  # used during build for COPY instructions in Dockerfile
       dockerfile: docker/files/cuda.Dockerfile 
@@ -27,7 +29,9 @@ services:
     volumes:
       - ../:/mast3r_ign  #relative path shall be set from where the actual YML file is placed.
       - ../../dchan:/dchan #for dchan project
+      - ../../PyElas:/PyElas #for PyElas project
       - ../../../data/chantier_lilles/:/mast3r_ign/data/chantier_lilles
+      - mast3r_bash_history:/root/.bash_history_data
     devices:
       - /dev/dri:/dev/dri #required for rendering and display 
     cap_add:
@@ -42,4 +46,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+
+volumes:
+  mast3r_bash_history:
     
