@@ -30,7 +30,10 @@ services:
       - ../:/mast3r_ign  #relative path shall be set from where the actual YML file is placed.
       - ../../dchan:/dchan #for dchan project
       - ../../PyElas:/PyElas #for PyElas project
+      - ../.cache/huggingface:/root/.cache/huggingface
       - ../../../data/chantier_lilles/:/mast3r_ign/data/chantier_lilles
+      - ../../../data/chantier_paris/:/mast3r_ign/data/chantier_paris
+      - /mnt:/mnt
       - mast3r_bash_history:/root/.bash_history_data
     devices:
       - /dev/dri:/dev/dri #required for rendering and display 
