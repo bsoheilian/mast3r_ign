@@ -58,7 +58,15 @@ RUN git clone https://github.com/facebookresearch/pytorch3d.git /opt/pytorch3d &
     export TORCH_CUDA_ARCH_LIST="12.0" && \
     pip install -e .
 
-  
+# for maskformer FB segmentation model
+RUN pip install -U transformers pillow  
+
+# Additional Python dependencies for dchan oriented image
+RUN pip install -U pyproj \
+    geopandas \
+    lxml \
+    rerun \
+    laspy
 
 # Runtime location (mounted repo)
 WORKDIR /mast3r_ign
