@@ -5,7 +5,6 @@ import numpy as np
 import torch
 from pytorch3d.renderer import PerspectiveCameras, TexturesUV
 from pytorch3d.structures import Meshes
-from scipy.ndimage import map_coordinates
 
 if __package__:
 	from .mesh_from_dsm import mesh_from_DSM, _read_rgb_image
@@ -26,8 +25,10 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 	centered float32 rendering coordinates. CUDA is required, as in the parent.
 
 	Texture coverage is checked at grid nodes, without source-camera occlusion
-	detection. Faces lacking coverage at any vertex are omitted. Texture detail
-	is limited by DSM resolution; vertical facades and overhangs are not added.
+	detection. Faces lacking coverage at any vertex are omitted. Projected vertex
+	UVs map each triangle into the full-resolution source image; the renderer
+	interpolates UVs across triangles. Source perspective is approximated within
+	each triangle. Vertical facades and overhangs are not added.
 	"""
 
 	_chunk_size = 65536
@@ -49,8 +50,8 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 		self.valid_mask &= torch.isfinite(self.Xg) & torch.isfinite(self.Yg) & torch.isfinite(self.Zg)
 		self._transform_geometry()
 		self.projected_pixels: Optional[np.ndarray] = None
-		self.baked_texture: Optional[torch.Tensor] = None
 		self.texture_valid_mask: Optional[torch.Tensor] = None
+		self.source_rgb: Optional[torch.Tensor] = None
 
 	@staticmethod
 	def _get_frame_center(transform) -> np.ndarray:
@@ -129,11 +130,12 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 		source_orientation: "Optional[STOrientation]" = None,
 		texture_sampling_mode: str = "bilinear",
 	) -> Meshes:
-		"""Bake one source image onto the DSM grid and replace the textured mesh.
+		"""Texture DSM triangles with projected UVs into the original source RGB.
 
 		RGB inputs must be HWC uint8 or floating values in [0, 1] or [0, 255].
 		Image dimensions must match the source calibration. Every retained face
-		has three covered vertices. No source visibility/occlusion is computed.
+		has three covered vertices. source_rgb holds normalized full-resolution
+		HWC values, not a DSM-grid bake. Rendering uses the parent implementation.
 		"""
 		if source_orientation is None:
 			raise ValueError("source_orientation is required to project the texture.")
@@ -162,16 +164,7 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 
 		projected = self.project_vertices_to_image(source_orientation)
 		texture_valid = np.isfinite(projected).all(axis=2)
-		baked = np.zeros((self.H, self.W, 3), dtype=np.float32)
-		sample_coordinates = projected[texture_valid][:, ::-1].T
-		for channel in range(3):
-			baked[..., channel][texture_valid] = map_coordinates(
-				rgb[..., channel], sample_coordinates,
-				order=1 if texture_sampling_mode == "bilinear" else 0,
-				mode="constant", cval=0.0, prefilter=False,
-			)
 		texture_valid_tensor = torch.as_tensor(texture_valid, device=self.device)
-		baked_tensor = torch.as_tensor(baked, device=self.device)
 
 		rows, cols = torch.meshgrid(
 			torch.arange(self.H - 1, device=self.device),
@@ -197,24 +190,24 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 		vertices = torch.stack([self.Xg, self.Yg, self.Zg], dim=-1) - origin
 		vertices[~self.valid_mask] = 0.0
 		vertices = vertices.reshape(-1, 3).float()
-		vertical, horizontal = torch.meshgrid(
-			torch.linspace(1.0, 0.0, self.H, device=self.device),
-			torch.linspace(0.0, 1.0, self.W, device=self.device), indexing="ij",
-		)
-		verts_uvs = torch.stack([horizontal, vertical], dim=-1).reshape(-1, 2)
+		source_rgb = torch.as_tensor(rgb, device=self.device)
+		verts_uvs = np.zeros((self.H, self.W, 2), dtype=np.float32)
+		verts_uvs[..., 0][texture_valid] = projected[..., 0][texture_valid] / (width - 1) if width > 1 else 0.5
+		verts_uvs[..., 1][texture_valid] = 1 - projected[..., 1][texture_valid] / (height - 1) if height > 1 else 0.5
 		textures = TexturesUV(
-			maps=baked_tensor.unsqueeze(0), verts_uvs=verts_uvs.unsqueeze(0),
+			maps=source_rgb.unsqueeze(0),
+			verts_uvs=torch.as_tensor(verts_uvs.reshape(-1, 2), device=self.device).unsqueeze(0),
 			faces_uvs=faces.unsqueeze(0), sampling_mode=texture_sampling_mode,
 			align_corners=True,
 		)
 		mesh = Meshes(verts=[vertices], faces=[faces], textures=textures)
 		self.projected_pixels = projected
-		self.baked_texture = baked_tensor
 		self.texture_valid_mask = texture_valid_tensor
 		self.render_origin_world = origin
 		self.vertices = vertices
 		self.faces = faces
 		self.mesh = mesh
+		self.source_rgb = source_rgb
 		return mesh
 
 	def create_perspective_camera_from_rt(
@@ -265,7 +258,7 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 	def create_perspective_camera_from_orientation(
 		self, target_orientation: "STOrientation",
 	) -> PerspectiveCameras:
-		"""Read the target pose and calibration without changing the baked texture."""
+		"""Read the target pose and calibration without changing the source image."""
 		self._validate_orientation(target_orientation)
 		width, height = target_orientation.intrinsic.image_size
 		ppa = target_orientation.intrinsic.ppa
