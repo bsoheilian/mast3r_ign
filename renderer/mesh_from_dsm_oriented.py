@@ -1,5 +1,16 @@
+"""Texture a local DSM surface from one oriented image and render another view.
+
+Usage: construct OrientedImageTexturedDSMMesh with the shared Euclidean frame,
+call build_textured_mesh(source_image, source_orientation), then
+render_from_orientation(target_orientation). Requires CUDA, PyTorch3D and dchan.
+
+Inside Docker, run the example with:
+	export PYTHONPATH="/dchan:/mast3r_ign${PYTHONPATH:+:$PYTHONPATH}"
+	python /mast3r_ign/renderer/mesh_from_dsm_oriented.py
+"""
+
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import Iterator, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -7,28 +18,25 @@ from pytorch3d.renderer import PerspectiveCameras, TexturesUV
 from pytorch3d.structures import Meshes
 
 if __package__:
-	from .mesh_from_dsm import mesh_from_DSM, _read_rgb_image
+	from . import mesh_utils as utils
 else:
-	from mesh_from_dsm import mesh_from_DSM, _read_rgb_image
+	import mesh_utils as utils
 
-if TYPE_CHECKING:
-	from dchan.core.utils.lamb93_euc_local import Lamb93_Euc_Local
-	from dchan.core.utils.stereopolis_orientation import STOrientation
+from dchan.core.utils.lamb93_euc_local import Lamb93_Euc_Local
+from dchan.core.utils.stereopolis_orientation import STOrientation
 
 
-class OrientedImageTexturedDSMMesh(mesh_from_DSM):
-	"""Build a local Euclidean DSM mesh textured from one undistorted image.
+class OrientedImageTexturedDSMMesh:
+	"""Lambert93 DSM -> local XYZ -> source UV texture -> target RGB/depth.
 
-	Source and target STOrientations must already use the supplied local frame
-	and identity distortion. DSM heights must match the camera altitude datum.
-	Xg/Yg/Zg and decode_xyz() contain full local coordinates; vertices are
-	centered float32 rendering coordinates. CUDA is required, as in the parent.
+	Both STOrientations must use the supplied local frame and identity distortion;
+	DSM heights must match their altitude datum. Xg/Yg/Zg are full float64 local
+	coordinates; mesh vertices are centered float32. render_origin_world denotes
+	the local-frame offset subtracted from both geometry and camera centers.
 
-	Texture coverage is checked at grid nodes, without source-camera occlusion
-	detection. Faces lacking coverage at any vertex are omitted. Projected vertex
-	UVs map each triangle into the full-resolution source image; the renderer
-	interpolates UVs across triangles. Source perspective is approximated within
-	each triangle. Vertical facades and overhangs are not added.
+	Faces need three geometry-valid, source-covered vertices. UVs sample the
+	original image, approximating source perspective within each triangle. No
+	source occlusion, vertical facade geometry, or overhangs are reconstructed.
 	"""
 
 	_chunk_size = 65536
@@ -37,24 +45,41 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 		self,
 		dsm_tiff_path: Union[str, Path],
 		vrt_path: Union[str, Path],
-		euclidien_transform: "Lamb93_Euc_Local",
+		euclidien_transform: Lamb93_Euc_Local,
 		nodata_value: Optional[float] = None,
 	):
 		if euclidien_transform is None:
 			raise ValueError("A shared euclidien_transform is required.")
 		self.euclidien_transform = euclidien_transform
 		self._frame_center = self._get_frame_center(euclidien_transform)
-		super().__init__(dsm_tiff_path, vrt_path, nodata_value)
+		if not torch.cuda.is_available():
+			raise RuntimeError("CUDA is not available. OrientedImageTexturedDSMMesh requires CUDA.")
+		self.device = torch.device("cuda")
+		project_root = Path(__file__).resolve().parent.parent
+		self.dsm_tiff_path = utils.resolve_existing_path(dsm_tiff_path, project_root)
+		self.vrt_path = utils.resolve_existing_path(vrt_path, project_root)
+		self._geotransform, raster_size, vrt_nodata = utils.read_vrt_metadata(self.vrt_path)
+		self.nodata_value = vrt_nodata if nodata_value is None else nodata_value
+		self.Zg = utils.read_dsm_as_tensor(self.dsm_tiff_path).to(self.device)
+		if raster_size is not None and self.Zg.shape != raster_size:
+			raise ValueError(f"DSM shape {self.Zg.shape} does not match VRT raster size {raster_size}.")
+		self.Xg, self.Yg = utils.decode_xy_from_geotransform(self.Zg.shape, self._geotransform, self.device)
+		self.H, self.W = self.Zg.shape
 		if self.H < 2 or self.W < 2:
 			raise ValueError("DSM dimensions must both be at least 2 to build faces.")
+		self.valid_mask = utils.build_valid_mask(self.Zg, self.nodata_value)
 		self.valid_mask &= torch.isfinite(self.Xg) & torch.isfinite(self.Yg) & torch.isfinite(self.Zg)
 		self._transform_geometry()
+		self.mesh: Optional[Meshes] = None
+		self.vertices: Optional[torch.Tensor] = None
+		self.faces: Optional[torch.Tensor] = None
+		self.render_origin_world: Optional[torch.Tensor] = None
 		self.projected_pixels: Optional[np.ndarray] = None
 		self.texture_valid_mask: Optional[torch.Tensor] = None
 		self.source_rgb: Optional[torch.Tensor] = None
 
 	@staticmethod
-	def _get_frame_center(transform) -> np.ndarray:
+	def _get_frame_center(transform: Lamb93_Euc_Local) -> np.ndarray:
 		center = np.array([
 			transform.euc_center_x, transform.euc_center_y, transform.euc_center_z,
 		], dtype=np.float64)
@@ -62,7 +87,7 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 			raise ValueError("Local frame center must be finite.")
 		return center
 
-	def _validate_orientation(self, orientation: "STOrientation") -> None:
+	def _validate_orientation(self, orientation: STOrientation) -> None:
 		"""Check available frame metadata; never change or reframe a camera."""
 		transform = getattr(orientation, "euclidien_transform", None)
 		if transform is not None and not np.allclose(
@@ -77,21 +102,28 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 			raise ValueError("Use an undistorted image with identity distortion.")
 		width, height = orientation.intrinsic.image_size
 		ppa = orientation.intrinsic.ppa
-		if width <= 0 or height <= 0 or not np.isfinite([ppa["f"], ppa["cx"], ppa["cy"]]).all() or ppa["f"] <= 0:
+		valid_intrinsics = np.isfinite([ppa["f"], ppa["cx"], ppa["cy"]]).all() and ppa["f"] > 0
+		if width <= 0 or height <= 0 or not valid_intrinsics:
 			raise ValueError("Orientation must have positive image dimensions and valid intrinsics.")
 
-	def _transform_geometry(self) -> None:
+	def _iter_valid_points(self) -> Iterator[Tuple[torch.Tensor, np.ndarray]]:
+		"""Yield flat CUDA indices and CPU float64 XYZ in bounded, row-major chunks."""
 		coordinates = [self.Xg.reshape(-1), self.Yg.reshape(-1), self.Zg.reshape(-1)]
 		valid = self.valid_mask.reshape(-1)
 		for start in range(0, valid.numel(), self._chunk_size):
 			stop = min(start + self._chunk_size, valid.numel())
 			indices = torch.nonzero(valid[start:stop], as_tuple=False).flatten() + start
-			if indices.numel() == 0:
-				continue
-			world = [coordinate[indices].cpu().numpy() for coordinate in coordinates]
+			if indices.numel():
+				yield indices, torch.stack([coordinate[indices] for coordinate in coordinates], dim=1).cpu().numpy()
+
+	def _transform_geometry(self) -> None:
+		"""Convert valid Lambert93 nodes in place, before float32 mesh centering."""
+		coordinates = [self.Xg.reshape(-1), self.Yg.reshape(-1), self.Zg.reshape(-1)]
+		valid = self.valid_mask.reshape(-1)
+		for indices, world in self._iter_valid_points():
 			local = np.stack([
 				np.asarray(axis, dtype=np.float64).reshape(-1)
-				for axis in self.euclidien_transform.lamb93_to_euclidean(*world)
+				for axis in self.euclidien_transform.lamb93_to_euclidean(*world.T)
 			], axis=1)
 			valid[indices] = torch.as_tensor(np.isfinite(local).all(axis=1), device=self.device)
 			for axis, coordinate in enumerate(coordinates):
@@ -101,7 +133,11 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 		for coordinate in coordinates:
 			coordinate[~valid] = torch.nan
 
-	def project_vertices_to_image(self, source_orientation: "STOrientation") -> np.ndarray:
+	def decode_xyz(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+		"""Return independent local float64 XYZ grids, with NaNs at invalid nodes."""
+		return tuple(coordinate.clone().masked_fill(~self.valid_mask, torch.nan) for coordinate in (self.Xg, self.Yg, self.Zg))
+
+	def project_vertices_to_image(self, source_orientation: STOrientation) -> np.ndarray:
 		"""Return (H, W, 2) source pixel coordinates, with NaNs outside coverage.
 
 		Projection uses full local coordinates, never centered mesh vertices.
@@ -110,47 +146,29 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 		self._validate_orientation(source_orientation)
 		width, height = source_orientation.intrinsic.image_size
 		projected = np.full((self.H * self.W, 2), np.nan, dtype=np.float64)
-		coordinates = [self.Xg.reshape(-1), self.Yg.reshape(-1), self.Zg.reshape(-1)]
-		valid = self.valid_mask.reshape(-1)
-		for start in range(0, valid.numel(), self._chunk_size):
-			stop = min(start + self._chunk_size, valid.numel())
-			indices = torch.nonzero(valid[start:stop], as_tuple=False).flatten() + start
-			if indices.numel() == 0:
-				continue
-			points = torch.stack([coordinate[indices] for coordinate in coordinates], dim=1).cpu().numpy()
+		for indices, points in self._iter_valid_points():
 			for index, point in zip(indices.cpu().numpy(), points):
 				pixel = source_orientation.LocalToImage(point, check_FOV=True)
-				if np.isfinite(pixel).all() and 0 <= pixel[0] <= width - 1 and 0 <= pixel[1] <= height - 1:
+				inside = 0 <= pixel[0] <= width - 1 and 0 <= pixel[1] <= height - 1
+				if np.isfinite(pixel).all() and inside:
 					projected[index] = pixel
 		return projected.reshape(self.H, self.W, 2)
 
-	def build_textured_mesh(
-		self,
+	@staticmethod
+	def _load_source_rgb(
 		source_image: Union[str, Path, np.ndarray, torch.Tensor],
-		source_orientation: "Optional[STOrientation]" = None,
-		texture_sampling_mode: str = "bilinear",
-	) -> Meshes:
-		"""Texture DSM triangles with projected UVs into the original source RGB.
-
-		RGB inputs must be HWC uint8 or floating values in [0, 1] or [0, 255].
-		Image dimensions must match the source calibration. Every retained face
-		has three covered vertices. source_rgb holds normalized full-resolution
-		HWC values, not a DSM-grid bake. Rendering uses the parent implementation.
-		"""
-		if source_orientation is None:
-			raise ValueError("source_orientation is required to project the texture.")
-		if texture_sampling_mode not in ("nearest", "bilinear"):
-			raise ValueError("texture_sampling_mode must be 'nearest' or 'bilinear'.")
-		self._validate_orientation(source_orientation)
+		image_size: Tuple[int, int],
+	) -> np.ndarray:
+		"""Load exact-size HWC uint8/float RGB and normalize to float32 [0, 1]."""
 		if isinstance(source_image, (str, Path)):
-			rgb = _read_rgb_image(Path(source_image))
+			rgb = utils.read_rgb_image(Path(source_image))
 		elif isinstance(source_image, torch.Tensor):
 			rgb = source_image.detach().cpu().numpy()
 		elif isinstance(source_image, np.ndarray):
 			rgb = source_image
 		else:
 			raise TypeError("source_image must be a path, numpy array, or torch tensor.")
-		width, height = source_orientation.intrinsic.image_size
+		width, height = image_size
 		if rgb.shape != (height, width, 3):
 			raise ValueError(f"Source RGB must have shape {(height, width, 3)}, got {rgb.shape}.")
 		is_uint8 = rgb.dtype == np.uint8
@@ -161,7 +179,27 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 			raise ValueError("Source RGB must be finite and within [0, 1] or [0, 255].")
 		if is_uint8 or rgb.max() > 1:
 			rgb /= 255.0
+		return rgb
 
+	def build_textured_mesh(
+		self,
+		source_image: Union[str, Path, np.ndarray, torch.Tensor],
+		source_orientation: Optional[STOrientation] = None,
+		texture_sampling_mode: str = "bilinear",
+	) -> Meshes:
+		"""Project source UVs, attach full-resolution RGB, and replace mesh state.
+
+		Input RGB is HWC uint8 or float in [0, 1]/[0, 255], matching the source
+		orientation's (width, height). source_rgb retains normalized HWC on CUDA;
+		projected_pixels and texture_valid_mask describe vertex coverage.
+		"""
+		if source_orientation is None:
+			raise ValueError("source_orientation is required to project the texture.")
+		if texture_sampling_mode not in ("nearest", "bilinear"):
+			raise ValueError("texture_sampling_mode must be 'nearest' or 'bilinear'.")
+		self._validate_orientation(source_orientation)
+		width, height = source_orientation.intrinsic.image_size
+		rgb = self._load_source_rgb(source_image, (width, height))
 		projected = self.project_vertices_to_image(source_orientation)
 		texture_valid = np.isfinite(projected).all(axis=2)
 		texture_valid_tensor = torch.as_tensor(texture_valid, device=self.device)
@@ -192,8 +230,9 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 		vertices = vertices.reshape(-1, 3).float()
 		source_rgb = torch.as_tensor(rgb, device=self.device)
 		verts_uvs = np.zeros((self.H, self.W, 2), dtype=np.float32)
-		verts_uvs[..., 0][texture_valid] = projected[..., 0][texture_valid] / (width - 1) if width > 1 else 0.5
-		verts_uvs[..., 1][texture_valid] = 1 - projected[..., 1][texture_valid] / (height - 1) if height > 1 else 0.5
+		cols, rows = projected[texture_valid].T
+		verts_uvs[..., 0][texture_valid] = cols / (width - 1) if width > 1 else 0.5
+		verts_uvs[..., 1][texture_valid] = 1 - rows / (height - 1) if height > 1 else 0.5
 		textures = TexturesUV(
 			maps=source_rgb.unsqueeze(0),
 			verts_uvs=torch.as_tensor(verts_uvs.reshape(-1, 2), device=self.device).unsqueeze(0),
@@ -210,6 +249,33 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 		self.source_rgb = source_rgb
 		return mesh
 
+	def render_perspective(
+		self,
+		camera: PerspectiveCameras,
+		image_size: Tuple[int, int],
+		faces_per_pixel: int = 1,
+		blur_radius: float = 0.0,
+		cull_backfaces: bool = False,
+		bin_size: Optional[int] = None,
+		max_faces_per_bin: Optional[int] = None,
+		render_mode: str = "texture_only",
+		enforce_cuda_outputs: bool = False,
+	) -> Tuple[torch.Tensor, torch.Tensor]:
+		"""Render a prepared camera at (height, width); see mesh_utils rendering."""
+		if self.mesh is None:
+			raise RuntimeError("Textured mesh is not built. Call build_textured_mesh(...) first.")
+		if render_mode not in ("texture_only", "phong"):
+			raise ValueError("render_mode must be 'texture_only' or 'phong'")
+		if not utils.device_matches_requested(self.mesh.device, self.device):
+			self.mesh = self.mesh.to(self.device)
+		return utils.render_textured_mesh(
+			self.mesh, camera, image_size, self.device,
+			faces_per_pixel=faces_per_pixel, blur_radius=blur_radius,
+			cull_backfaces=cull_backfaces, bin_size=bin_size,
+			max_faces_per_bin=max_faces_per_bin, render_mode=render_mode,
+			enforce_cuda_outputs=enforce_cuda_outputs,
+		)
+
 	def create_perspective_camera_from_rt(
 		self,
 		R: Union[np.ndarray, torch.Tensor],
@@ -221,7 +287,8 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 		"""Use image-to-local R and full local camera center T, with size (H, W).
 
 		Supply camera centers as float64 to preserve geospatial precision.
-		The inherited render_origin_world name denotes a local-frame origin here.
+		R accepts (3, 3)/(1, 3, 3); T accepts (3,)/(1, 3). Camera-axis conversion
+		flips image X/Y for PyTorch3D, after centering T in float64.
 		"""
 		if self.render_origin_world is None:
 			raise RuntimeError("Call build_textured_mesh(...) before creating camera.")
@@ -247,7 +314,8 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 			focal = (float(focal_length_px), float(focal_length_px))
 		principal = tuple(float(value) for value in principal_point_px)
 		height, width = int(image_size[0]), int(image_size[1])
-		if height <= 0 or width <= 0 or not np.isfinite(focal + principal).all() or min(focal) <= 0:
+		valid_intrinsics = np.isfinite(focal + principal).all() and min(focal) > 0
+		if height <= 0 or width <= 0 or not valid_intrinsics:
 			raise ValueError("Camera image size and focal lengths must be positive; intrinsics must be finite.")
 		return PerspectiveCameras(
 			device=self.device, R=converted_rotation, T=translation,
@@ -256,7 +324,7 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 		)
 
 	def create_perspective_camera_from_orientation(
-		self, target_orientation: "STOrientation",
+		self, target_orientation: STOrientation,
 	) -> PerspectiveCameras:
 		"""Read the target pose and calibration without changing the source image."""
 		self._validate_orientation(target_orientation)
@@ -271,7 +339,7 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 
 	def render_from_orientation(
 		self,
-		target_orientation: "STOrientation",
+		target_orientation: STOrientation,
 		faces_per_pixel: int = 1,
 		blur_radius: float = 0.0,
 		cull_backfaces: bool = False,
@@ -280,10 +348,10 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 		render_mode: str = "texture_only",
 		enforce_cuda_outputs: bool = False,
 	) -> Tuple[torch.Tensor, torch.Tensor]:
-		"""Render RGB and camera-axis depth from either an aerial or ground camera.
+		"""Return CUDA HWC RGB in [0, 1] and camera-axis depth with NaN background.
 
-		Reuse this mesh for multiple target views. To reverse image roles, rebuild
-		with the other source image/orientation, then render the former source view.
+		Output dimensions follow the target orientation, whose image_size is (W,H).
+		Reuse the mesh for multiple targets; rebuild it to change the source image.
 		"""
 		camera = self.create_perspective_camera_from_orientation(target_orientation)
 		width, height = target_orientation.intrinsic.image_size
@@ -295,47 +363,27 @@ class OrientedImageTexturedDSMMesh(mesh_from_DSM):
 		)
 
 if __name__ == "__main__":
-	from dchan.core.utils.stereopolis_orientation import STOrientation
-
-	if __package__:
-		from .mesh_from_dsm import (
-			_save_rgb_image, _save_depth_image, _save_depth_preview_image, _show_rendered,
-		)
-	else:
-		from mesh_from_dsm import (
-			_save_rgb_image, _save_depth_image, _save_depth_preview_image, _show_rendered,
-		)
-
-	root_path = "/mast3r_ign/data/chantier_paris/preview_301/mast3r_sample_data/Paris-140418_0545-301-00002_0000673"
-	dsm_path = Path(root_path) / "Paris-140418_0545-301-00002_0000673_dsm_cropped.tif"
-	vrt_path = Path(root_path) / "Paris-140418_0545-301-00002_0000673_dsm_cropped.vrt"
-	source_ori_path = Path(root_path) / "pva_thumbnails/FAUUPARIS10x00026_24551_19052014_675_3466.xml"
-	source_ori = STOrientation(source_ori_path)
-	source_image_path = Path(root_path) / "pva_thumbnails/FAUUPARIS10x00026_24551_19052014_675_3466.tif"
-	surface = OrientedImageTexturedDSMMesh(dsm_path, vrt_path, source_ori.euclidien_transform)
+	ground_name = "Paris-140418_0545-301-00002_0000673"
+	aerial_name = "FAUUPARIS10x00026_24551_19052014_675_3466"
+	root = Path("/mast3r_ign/data/chantier_paris/preview_301/mast3r_sample_data") / ground_name
+	dsm_path, vrt_path = root / f"{ground_name}_dsm_cropped.tif", root / f"{ground_name}_dsm_cropped.vrt"
+	source_ori = STOrientation(root / "pva_thumbnails" / f"{aerial_name}.xml")
+	source_image_path = root / "pva_thumbnails" / f"{aerial_name}.tif"
+	
+    surface = OrientedImageTexturedDSMMesh(dsm_path, vrt_path, source_ori.euclidien_transform)
 	surface.build_textured_mesh(source_image_path, source_ori)
-	target_ori_path = Path(root_path) / "Paris-140418_0545-301-00002_0000673_upright_euc.xml"
-	target_ori = STOrientation(target_ori_path)
+	target_ori = STOrientation(root / f"{ground_name}_upright_euc.xml")
 	rgb, depth = surface.render_from_orientation(target_ori)
 
-	output_dir = Path(root_path) / "rendered_views"
+	output_dir = root / "rendered_views"
 	rgb_path = output_dir / "rgb.png"
 	depth_path = output_dir / "depth.tif"
 	depth_preview_path = output_dir / "depth.preview.png"
-	_save_rgb_image(rgb, rgb_path)
-	_save_depth_image(depth, depth_path)
-	_save_depth_preview_image(depth, depth_preview_path)
+	utils.save_rgb_image(rgb, rgb_path)
+	utils.save_depth_image(depth, depth_path)
+	utils.save_depth_preview_image(depth, depth_preview_path)
 	print(f"Saved RGB: {rgb_path}")
 	print(f"Saved depth: {depth_path}")
 	print(f"Saved depth preview: {depth_preview_path}")
-	_show_rendered(rgb, depth)
+	utils.show_rendered(rgb, depth)
 
-#it runs the script from the command line
-#problems : 
-# resolution problem , the dsm seems to be badly textured , low resolution and also georef problem
-
-#to run this script from the command line, use the following commands:
-#export PYTHONPATH="/dchan:/mast3r_ign${PYTHONPATH:+:$PYTHONPATH}"
-#python /mast3r_ign/renderer/mesh_from_dsm_oriented.py
-
-         
