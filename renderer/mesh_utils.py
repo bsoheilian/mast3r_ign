@@ -88,6 +88,72 @@ def read_dsm_as_tensor(dsm_tiff_path: Path) -> torch.Tensor:
 	return torch.from_numpy(dsm.astype(np.float64, copy=False))
 
 
+def load_surface(
+	surface: Union[str, Path, np.ndarray, torch.Tensor],
+	*,
+	profile: Optional[dict] = None,
+	vrt_path: Optional[Union[str, Path]] = None,
+) -> Tuple[torch.Tensor, dict]:
+	"""Load elevations and metadata, or normalize an in-memory raster/profile.
+
+	Paths may identify GeoTIFFs or VRTs; band one is read. Memory inputs must
+	be (H,W) or (1,H,W), with a profile containing an Affine transform. A VRT
+	metadata override is allowed only for file inputs. Declared CRS must be
+	Lambert93; absent CRS leaves that responsibility to the caller. Returned
+	float64 elevations and profile are independent of caller-owned inputs.
+	"""
+	import rasterio
+	from affine import Affine
+
+	project_root = Path(__file__).resolve().parent.parent
+	is_path = isinstance(surface, (str, Path))
+	if is_path:
+		if profile is not None:
+			raise ValueError("profile is only accepted for in-memory surfaces.")
+		path = resolve_existing_path(surface, project_root)
+		with rasterio.open(path) as source:
+			data, metadata = source.read(1), source.profile.copy()
+		if vrt_path is not None:
+			override_path = resolve_existing_path(vrt_path, project_root)
+			geotransform, size, nodata = read_vrt_metadata(override_path)
+			if size is not None and data.shape != size:
+				raise ValueError(f"Surface shape {data.shape} does not match VRT raster size {size}.")
+			with rasterio.open(override_path) as source:
+				metadata["crs"] = source.crs
+			metadata.update(transform=Affine.from_gdal(*geotransform), nodata=nodata)
+	else:
+		if not isinstance(surface, (np.ndarray, torch.Tensor)):
+			raise TypeError("surface must be a raster path, numpy array, or torch tensor.")
+		if vrt_path is not None:
+			raise ValueError("vrt_path is only accepted for file surfaces; use profile for memory inputs.")
+		if profile is None:
+			raise ValueError("An in-memory surface requires a profile containing its transform.")
+		data, metadata = surface, dict(profile)
+		if data.ndim == 3 and data.shape[0] == 1:
+			data = data[0]
+	if data.ndim != 2 or min(data.shape) == 0:
+		raise ValueError("Surface elevations must have shape (H,W) or (1,H,W).")
+	height, width = data.shape
+	for key, expected in (("height", height), ("width", width)):
+		if key in metadata and metadata[key] != expected:
+			raise ValueError(f"Profile {key} does not match surface data: expected {expected}.")
+	if not is_path and metadata.get("count", 1) != 1:
+		raise ValueError("An in-memory elevation profile must describe one band.")
+	transform = metadata.get("transform")
+	if not isinstance(transform, Affine) or not np.isfinite(transform.to_gdal()).all():
+		raise ValueError("Surface profile must contain a finite Affine transform.")
+	crs = metadata.get("crs")
+	if crs is not None and rasterio.crs.CRS.from_user_input(crs).to_epsg() != 2154:
+		raise ValueError("Surface CRS must be Lambert93 (EPSG:2154); reproject before rendering.")
+	metadata.update(height=height, width=width, count=1)
+	if isinstance(data, np.ndarray):
+		data = np.array(data, dtype=np.float64, copy=True, order="C")
+		elevations = torch.from_numpy(data)
+	else:
+		elevations = data.detach().to(dtype=torch.float64).clone()
+	return elevations, metadata
+
+
 def build_valid_mask(zg: torch.Tensor, nodata_value: Optional[float]) -> torch.Tensor:
 	"""Mask explicit nodata; callers separately reject other nonfinite values."""
 	if nodata_value is None:
