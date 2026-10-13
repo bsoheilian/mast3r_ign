@@ -26,13 +26,16 @@ services:
       - http_proxy=http://proxy.ign.fr:3128
       - https_proxy=http://proxy.ign.fr:3128
       - no_proxy=localhost,127.0.0.1,*.ign.fr
+      - HOST_MAST3R_IGN_ROOT=${HOST_MAST3R_IGN_ROOT:-..}
+      # container=host prefixes, keep in sync with the volumes below
+      - HOST_PATH_MAP=/mast3r_ign=${HOST_MAST3R_IGN_ROOT:-..},/dchan=${HOST_DCHAN_ROOT:-../../dchan},/mast3r_ign/data/chantier_lilles=${HOST_DATA_ROOT:-../../../data}/chantier_lilles,/mast3r_ign/data/chantier_paris=${HOST_DATA_ROOT:-../../../data}/chantier_paris,/mnt=/mnt
     volumes:
-      - ../:/mast3r_ign  #relative path shall be set from where the actual YML file is placed.
-      - ../../dchan:/dchan #for dchan project
+      - ${HOST_MAST3R_IGN_ROOT:-../}:/mast3r_ign  #relative path shall be set from where the actual YML file is placed.
+      - ${HOST_DCHAN_ROOT:-../../dchan}:/dchan #for dchan project
       - ../../PyElas:/PyElas #for PyElas project
       - ../.cache/huggingface:/root/.cache/huggingface
-      - ../../../data/chantier_lilles/:/mast3r_ign/data/chantier_lilles
-      - ../../../data/chantier_paris/:/mast3r_ign/data/chantier_paris
+      - ${HOST_DATA_ROOT:-../../../data}/chantier_lilles/:/mast3r_ign/data/chantier_lilles
+      - ${HOST_DATA_ROOT:-../../../data}/chantier_paris/:/mast3r_ign/data/chantier_paris
       - /mnt:/mnt
       - mast3r_bash_history:/root/.bash_history_data
     devices:
