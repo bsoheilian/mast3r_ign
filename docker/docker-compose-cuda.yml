@@ -34,7 +34,7 @@ services:
       - ${HOST_DCHAN_ROOT:-../../dchan}:/dchan #for dchan project
       - ../../PyElas:/PyElas #for PyElas project
       - ../../FLAIR-1:/FLAIR-1
-      - ../../sam3:/sam3 
+      #- ../../sam3:/sam3 
       - ../.cache/huggingface:/root/.cache/huggingface
       - ${HOST_DATA_ROOT:-../../../data}/chantier_lilles/:/mast3r_ign/data/chantier_lilles
       - ${HOST_DATA_ROOT:-../../../data}/chantier_paris/:/mast3r_ign/data/chantier_paris

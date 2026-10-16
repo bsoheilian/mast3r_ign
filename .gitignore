@@ -192,3 +192,16 @@ ign_samples/aerial_crop.tif
 flair-2/flair_output/segmentation.tif
 flair-2/flair_output/segmentation.npy
 flair-2/flair_output/aerial_crop_pixel_coordinates.tif
+ign_samples/sam_output/00_building_mask.png
+ign_samples/sam_output/00_car_mask.png
+ign_samples/sam_output/01_roof_mask.png
+ign_samples/sam_output/01_shadow_mask.png
+ign_samples/sam_output/01_vegetation_mask.png
+ign_samples/sam_output/01_zebra-crossing_mask.png
+ign_samples/sam_output/02_building_mask.png
+ign_samples/sam_output/02_marking_mask.png
+ign_samples/sam_output/02_markings_mask.png
+ign_samples/sam_output/03_road_mask.png
+ign_samples/sam_output/03_vegetation_mask.png
+ign_samples/sam_output/04_vegetation_mask.png
+ign_samples/sam_output/05_crosswalk_mask.png

@@ -68,5 +68,11 @@ RUN pip install -U pyproj \
     rerun \
     laspy
 
+RUN git clone https://github.com/facebookresearch/sam3.git /opt/sam3 \
+    && cd /opt/sam3 \
+    && git checkout 7f473cfd983d5eb43040ff608f66bff0d7bdcb53 \
+    && pip install -e .
+
+RUN PIP_CONSTRAINT=/dev/null python -m pip install --upgrade "typer>=0.20.0,<1"
 # Runtime location (mounted repo)
 WORKDIR /mast3r_ign
