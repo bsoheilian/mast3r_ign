@@ -1,0 +1,30 @@
+
+output_path: "/mast3r_ign/flair-2/flair_output"
+output_name: "segmentation"
+
+input_img_path: "/mast3r_ign/flair-2/flair_output/aerial_crop_pixel_coordinates.tif"
+channels: [1, 2, 3]
+
+img_pixels_detection: 512
+margin: 128
+output_type: "argmax"
+n_classes: 19
+
+model_weights: "/root/.cache/huggingface/hub/models--IGNF--FLAIR-INC_rgb_15cl_resnet34-unet/snapshots/d8a81bc5bc46357677ba0569e83c4c68d3f78b89/FLAIR-INC_rgb_15cl_resnet34-unet_weights.pth"
+
+model_framework:
+  model_provider: SegmentationModelsPytorch
+  SegmentationModelsPytorch:
+    encoder_decoder: resnet34_unet
+
+
+batch_size: 2
+use_gpu: true
+num_worker: 0
+
+write_dataframe: false
+
+norma_task:
+  - norm_type: custom
+    norm_means: [105.08, 110.87, 101.82]
+    norm_stds: [52.17, 45.38, 44.00]
