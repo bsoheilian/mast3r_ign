@@ -175,6 +175,34 @@ Once the georeferencing of existing data is refined they can be used as referenc
 
 
  
+ ## IGNAerialMegaDepth
+ The base for training would be Mast3r training : 
+ The nearest inspiration would be that of AerialMegaDepth: 
+ ```
+torchrun --nproc_per_node=4 train_aerial.py \
+  --train_dataset "100_000 @ MegaDepthAerial(split='train', ROOT='/path/to/megadepth_aerial_processed', split_file='/path/to/data_splits/aerial_megadepth_train_part1.npz', resolution=224, aug_crop=16, transform=ColorJitter)" \
+  --test_dataset "1_000 @ MegaDepthAerial(split='val', ROOT='/path/to/megadepth_aerial_processed', split_file='/path/to/data_splits/aerial_megadepth_train_part1.npz', resolution=224, seed=777)" \
+  --lr 1e-5 \
+  --batch_size 4 \
+  --output_dir checkpoints/aerial_dust3r
+ ```
+
+ For that a class called ```MegaDepthAerial``` was created based on ```BaseStereoViewDataset``` this  is because AerialMegaDepth repo provides only the training pipeline for Duster based approach. That of Mast3r is not provided even if it is done in AerialMegaDepth. 
+
+ As we plan mainly to train for feature head that is available in Mast3r and not in Duster, the way to go is:
+ - to inspire from Aerial Mega depth how their dataloader (```class MegaDepthAerial```) is implemented but do it in ``` class MASt3RBaseStereoViewDataset ``` style as only this dataloader manage to generate the required 2D correspondances from images, oris and depth maps. @todo understand where those correspondances are coded.
+
+ I plan to creat somethingcalled ```IGNMegaDepth``` based on ```BaseStereoViewDataset``` and following the same process as ``` class MASt3RBaseStereoViewDataset ``` in what is concerning correspondance generation but without setting pp at the center of image. 
+
+ In fact the way Mast3r set the pp to the center of image is only valid for pp that are near enough to the center but in ourcase it can be far away due to crops in aerial images. 
+
+ The concept of data augmentation shall also be followed. 
+
+ Also check if a dryrun is possible for running train. 
+
+ A dataviewer that can be random (choossing randomly the sets ) and showing the pair in 3D together with eventually the correspondances can be very helpful. 
+
+ for that inspire form the __main__ in megadepth_aerial.py file 
 
 
 
