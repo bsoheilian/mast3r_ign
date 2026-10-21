@@ -190,7 +190,14 @@ torchrun --nproc_per_node=4 train_aerial.py \
  For that a class called ```MegaDepthAerial``` was created based on ```BaseStereoViewDataset``` this  is because AerialMegaDepth repo provides only the training pipeline for Duster based approach. That of Mast3r is not provided even if it is done in AerialMegaDepth. 
 
  As we plan mainly to train for feature head that is available in Mast3r and not in Duster, the way to go is:
- - to inspire from Aerial Mega depth how their dataloader (```class MegaDepthAerial```) is implemented but do it in ``` class MASt3RBaseStereoViewDataset ``` style as only this dataloader manage to generate the required 2D correspondances from images, oris and depth maps. @todo understand where those correspondances are coded.
+ - to inspire from Aerial Mega depth how their dataloader (```class MegaDepthAerial```) is implemented but do it in ``` class MASt3RBaseStereoViewDataset ``` style as only this dataloader manage to generate the required 2D correspondances from images, oris and depth maps. @todo understand where those correspondances are coded: done they are codded as follows:
+
+ ```
+            views[0]['corres'] = corres1
+            views[1]['corres'] = corres2
+            views[0]['valid_corres'] = valid
+            views[1]['valid_corres'] = valid
+ ```
 
  I plan to creat somethingcalled ```IGNMegaDepth``` based on ```BaseStereoViewDataset``` and following the same process as ``` class MASt3RBaseStereoViewDataset ``` in what is concerning correspondance generation but without setting pp at the center of image. 
 
