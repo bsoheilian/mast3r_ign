@@ -205,3 +205,6 @@ ign_samples/sam_output/03_road_mask.png
 ign_samples/sam_output/03_vegetation_mask.png
 ign_samples/sam_output/04_vegetation_mask.png
 ign_samples/sam_output/05_crosswalk_mask.png
+ign_samples/sam_output/15_poles_mask.png
+ign_samples/sam_output/*
+ign_samples/sam_input/*

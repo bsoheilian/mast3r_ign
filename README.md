@@ -211,6 +211,12 @@ torchrun --nproc_per_node=4 train_aerial.py \
 
  for that inspire form the __main__ in megadepth_aerial.py file 
 
+There are two ways to create ```IGNMegaDepth``` that is based on ```BaseStereoViewDataset```:  
+- to implement only ```_get_views``` and let ```__getitem__(self, idx)``` of ```BaseStereoViewDataset``` to manage.
+- to implement directly our own ```__getitem__(self, idx)``` like what ``` class MASt3RBaseStereoViewDataset ``` did.
 
+### Architecture
+Create dataloader in `mast3r_ign/misc_ign_data/ign_aerial_ground.py`
+create ign_aerial_ground_train in `mast3r_ign/ign_aerial_ground_train.py`
 
 
