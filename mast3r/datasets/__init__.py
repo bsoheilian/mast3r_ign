@@ -2,6 +2,7 @@
 # Licensed under CC BY-NC-SA 4.0 (non-commercial use only).
 
 from .base.mast3r_base_stereo_view_dataset import MASt3RBaseStereoViewDataset
+from misc_ign_data.ign_aerial_ground import ign_aerial_ground
 
 import mast3r.utils.path_to_dust3r  # noqa
 from dust3r.datasets.arkitscenes import ARKitScenes as DUSt3R_ARKitScenes  # noqa

@@ -449,6 +449,39 @@ torchrun --nproc_per_node=4 train.py \
 
 ```
 
+### IGN Aerial-Ground Skeleton
+
+The `ign_aerial_ground` class in [misc_ign_data/ign_aerial_ground.py](misc_ign_data/ign_aerial_ground.py)
+inherits directly from `BaseStereoViewDataset` and has its own `__getitem__`.
+Implement `_load_pairs()` to read metadata from `self.ROOT` and select site-disjoint
+splits using `self.split`. Implement `_get_views(idx, resolution, rng)` to load each
+pair and perform your custom processing. Both hooks currently raise `NotImplementedError`.
+Their docstrings specify the required view fields and camera/depth conventions.
+
+After implementing these hooks, replace the dataset options in the training command above with:
+
+```bash
+--train_dataset "1000 @ ign_aerial_ground(split='train', ROOT='data/ign', resolution=(512,384), n_corres=8192)" \
+--test_dataset "100 @ ign_aerial_ground(split='test', ROOT='data/ign', resolution=(512,384), n_corres=1024, seed=777)"
+```
+
+Only one resolution is supported. Image and depth dimensions are asserted against it;
+no cropping, resizing, padding, rotation, or portrait transposition is applied.
+Use the supplied `rng` for custom random processing. Set `is_metric_scale=True`
+only if the camera translations and camera-z depths share a known metric scale.
+
+The matching losses in the training command require actual integer pixel `corres`
+arrays and boolean `valid_corres` masks from `_get_views` in both views. The skeleton
+validates these when `n_corres > 0`, but does not generate them. For regression-only
+training, leave `n_corres=0` and remove matching terms from both loss expressions.
+Do not pass the other datasets' augmentation options to this skeleton.
+
+After implementing the hooks, visualize a random pair from the repository root:
+
+```bash
+python -m misc_ign_data.ign_aerial_ground --root data/ign --split train --resolution 512 384
+```
+
 ### Our Hyperparameters
 We didn't release all the training datasets, but here are the commands we used for training our models:
 
