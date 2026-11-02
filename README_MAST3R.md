@@ -482,6 +482,53 @@ After implementing the hooks, visualize a random pair from the repository root:
 python -m misc_ign_data.ign_aerial_ground --root data/ign --split train --resolution 512 384
 ```
 
+#### datasets concerns
+I plan to precompute the required image size so that there is less to do in term of resampling and cropping in the dataloader. here are some points:
+- ground images can be already resamples at 512 X a size that is a multiple of 16 and make the aspect ratio similar
+- aerial images : it does not make sens to have the same size as ground images as it should cover the same aria on the road as ground based images. 
+- the best choice can be a square shape of 512x512 positionned correcctly irt the ground image pose in aerial image.
+before going for precomutation of these images I had to check if from architectural point of view it is possible to have view_1 and view_2 with different shapes. 
+check this discussion : https://chatgpt.com/share/6ae8cd68-a7a4-83ed-a2fd-2f8f03eb1435
+a proposition of modif is also provided by copilot as follows :
+
+```
+# in file : /home/BSoheilian/work/dev/mast3r_ign/dust3r/dust3r/inference.py
+# In loss_of_one_batch, insert this immediately after view1, view2 = batch, keeping the remaining code unchanged:
+    different_shapes = view1['img'].shape != view2['img'].shape
+    if symmetrize_batch and different_shapes:
+        forward = loss_of_one_batch(
+            (view1, view2), model, criterion, device,
+            symmetrize_batch=False, use_amp=use_amp,
+        )
+        reverse = loss_of_one_batch(
+            (view2, view1), model, criterion, device,
+            symmetrize_batch=False, use_amp=use_amp,
+        )
+
+        if criterion is not None:
+            loss_forward, details_forward = forward['loss']
+            loss_reverse, details_reverse = reverse['loss']
+            details = {
+                f'forward_{key}': value
+                for key, value in details_forward.items()
+            }
+            details.update({
+                f'reverse_{key}': value
+                for key, value in details_reverse.items()
+            })
+            forward['loss'] = (
+                0.5 * (loss_forward + loss_reverse), details
+            )
+
+        forward['reverse'] = reverse
+        return forward[ret] if ret else forward
+```
+
+
+
+
+
+
 ### Our Hyperparameters
 We didn't release all the training datasets, but here are the commands we used for training our models:
 
