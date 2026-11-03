@@ -158,3 +158,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# cars trucks buses motorcycles bicycles pedestrians buildings rooftops houses trees bushes vegetation furniture traffic-signs street-lights poles
