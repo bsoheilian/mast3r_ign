@@ -20,6 +20,11 @@ services:
         no_proxy: localhost,127.0.0.1,*.ign.fr
     environment: #runtime environment variables, set for the container
       - DEVICE=cuda
+      # The NGC PyTorch base image forces TF32 in cuBLAS float32 matmuls (~1e-3 relative precision).
+      # PyTorch3D camera transforms then lose ~6 px on aerial views (f~40000 px, depth~4500 m,
+      # principal point far outside the thumbnail) and ~0.4 px on ground views. Keep full float32.
+      - TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0
+      - NVIDIA_TF32_OVERRIDE=0
       - HTTP_PROXY=http://proxy.ign.fr:3128
       - HTTPS_PROXY=http://proxy.ign.fr:3128
       - NO_PROXY=localhost,127.0.0.1,*.ign.fr

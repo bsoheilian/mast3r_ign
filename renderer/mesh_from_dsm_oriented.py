@@ -26,8 +26,16 @@ from typing import Iterator, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from pytorch3d.renderer import PerspectiveCameras, TexturesUV
+import torch.nn.functional as F
+from pytorch3d.renderer import MeshRasterizer, PerspectiveCameras, RasterizationSettings, TexturesUV
 from pytorch3d.structures import Meshes
+
+# TF32 matmuls (default in NGC images, and enabled by dust3r/croco on import) round to ~1e-3.
+# PyTorch3D's projection sums near-cancelling terms (f*X vs cx*Z ~ 1e5 for aerial cameras),
+# which gave ~6 px reprojection error on aerial thumbnails and ~0.4 px on ground images.
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
+torch.set_float32_matmul_precision("highest")
 
 if __package__:
 	from . import mesh_utils as utils
@@ -94,6 +102,7 @@ class OrientedImageTexturedDSMMesh:
 		self.projected_pixels: Optional[np.ndarray] = None
 		self.texture_valid_mask: Optional[torch.Tensor] = None
 		self.source_rgb: Optional[torch.Tensor] = None
+		self.source_orientation: Optional[STOrientation] = None
 
 	@staticmethod
 	def _load_orientation(value: Union[STOrientation, str, Path]) -> STOrientation:
@@ -307,6 +316,7 @@ class OrientedImageTexturedDSMMesh:
 		self.faces = faces
 		self.mesh = mesh
 		self.source_rgb = source_rgb
+		self.source_orientation = source_orientation
 		return mesh
 
 	def render_perspective(
@@ -394,7 +404,7 @@ class OrientedImageTexturedDSMMesh:
 		return self.create_perspective_camera_from_rt(
 			R=target_orientation.extrinsic.get_rot(image2ground=True),
 			T=target_orientation.extrinsic.get_center(),
-			focal_length_px=ppa["f"], principal_point_px=(ppa["cx"], ppa["cy"]),
+			focal_length_px=ppa["f"], principal_point_px=(ppa["cx"]+0.5, ppa["cy"]+0.5),
 			image_size=(height, width),
 		)
 
@@ -423,6 +433,61 @@ class OrientedImageTexturedDSMMesh:
 			max_faces_per_bin=max_faces_per_bin, render_mode=render_mode,
 			enforce_cuda_outputs=enforce_cuda_outputs,
 		)
+
+	def _project_to_source(self, X: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+		"""Project (N,3) float64 local points with the source orientation; return pixels and camera z."""
+		ori = self.source_orientation
+		R = torch.as_tensor(ori.extrinsic.get_rot(image2ground=False), device=X.device, dtype=torch.float64)
+		C = torch.as_tensor(ori.extrinsic.get_center(), device=X.device, dtype=torch.float64)
+		p = (X - C) @ R.T
+		ppa = ori.intrinsic.ppa
+		uv = torch.stack([ppa["f"] * p[:, 0] / p[:, 2] + ppa["cx"], ppa["f"] * p[:, 1] / p[:, 2] + ppa["cy"]], 1)
+		return uv, p[:, 2]
+
+	def render_from_orientation_deferred(
+		self,
+		target_orientation: Union[STOrientation, str, Path],
+		bin_size: Optional[int] = None,
+		max_faces_per_bin: Optional[int] = None,
+	) -> Tuple[torch.Tensor, torch.Tensor]:
+		"""Like render_from_orientation, but textures each pixel by exact projection into the source.
+
+		Avoids the per-triangle UV interpolation error of TexturesUV, which grows
+		with depth variation across a face (large near-range triangles).
+		"""
+		if self.mesh is None or self.source_orientation is None:
+			raise RuntimeError("Textured mesh is not built. Call build_textured_mesh(...) first.")
+		# Re-assert: a later dust3r/croco import sets allow_tf32=True, reintroducing the aerial pixel error.
+		torch.backends.cuda.matmul.allow_tf32 = False
+		target_orientation = self._load_orientation(target_orientation)
+		camera = self.create_perspective_camera_from_orientation(target_orientation)
+		width, height = target_orientation.intrinsic.image_size
+		fragments = MeshRasterizer(
+			cameras=camera,
+			raster_settings=RasterizationSettings(
+				image_size=(height, width), bin_size=bin_size, max_faces_per_bin=max_faces_per_bin,
+			),
+		)(self.mesh)
+		pix_to_face = fragments.pix_to_face[0, ..., 0]
+		hit = pix_to_face >= 0
+		bary = fragments.bary_coords[0, ..., 0, :][hit].double().unsqueeze(-1)
+		face_verts = self.vertices[self.faces[pix_to_face[hit]]].double()
+		X = (bary * face_verts).sum(1) + self.render_origin_world.double()
+
+		uv, z = self._project_to_source(X)
+		src_h, src_w = self.source_rgb.shape[:2]
+		grid = torch.stack([uv[:, 0] / (src_w - 1), uv[:, 1] / (src_h - 1)], 1) * 2 - 1
+		sampled = F.grid_sample(
+			self.source_rgb.permute(2, 0, 1).unsqueeze(0),
+			grid.float().view(1, 1, -1, 2), mode="bilinear", align_corners=True,
+		)[0, :, 0].T
+		sampled[~((z > 0) & (grid.abs() <= 1).all(1))] = 0.0
+
+		rgb = torch.zeros((height, width, 3), device=self.device)
+		rgb[hit] = sampled
+		depth = fragments.zbuf[0, ..., 0].clone()
+		depth[~hit] = torch.nan
+		return rgb, depth
 
 if __name__ == "__main__":
 	ground_name = "Paris-140418_0545-301-00002_0000673"
