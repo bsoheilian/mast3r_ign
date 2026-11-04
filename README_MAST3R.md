@@ -525,6 +525,11 @@ a proposition of modif is also provided by copilot as follows :
 ```
 
 
+### IGN data augmentation
+The real samples generated from aerial and ground based images shall be controlled to check if the pose parameters (mainly that of ground based images). This can be done by looking into the overlays (real ground with rendered aerial texture from ground based view or the same kind of view from aerial image ). This will filter out a lot of samples. 
+For those samples that were removed duee to pose errors an idea would be to use them for data augmentation. This can be done by: 
+- using real ground based imagee
+- generating virtual aerial image (that would be perfectly matching). 
 
 
 
