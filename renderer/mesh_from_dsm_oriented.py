@@ -19,6 +19,16 @@ objects or paths. Arrays and profiles are never modified by the renderer.
 Inside Docker, run the example with:
 	export PYTHONPATH="/dchan:/mast3r_ign${PYTHONPATH:+:$PYTHONPATH}"
 	python /mast3r_ign/renderer/mesh_from_dsm_oriented.py
+
+Accuracy notes (validated with render_diagnostics; self-consistency < 0.01 px):
+- PyTorch3D screen cameras put pixel centres at i+0.5, STOrientation at i:
+  the principal point is shifted by +0.5 px (fixed a uniform 0.5 px up-left shift).
+- TexturesUV interpolates UVs linearly per triangle, but projection is not
+  linear: up to ~2 px on large near-range ground faces. Use
+  render_from_orientation_deferred, which projects every pixel exactly.
+- TF32 matmuls (NGC image default, also set by dust3r/croco) cost ~6 px on
+  aerial cameras (f~40000 px, depth~4.5 km, principal point far off the
+  thumbnail) and ~0.4 px on ground cameras; TF32 is disabled below.
 """
 
 from pathlib import Path
@@ -30,9 +40,7 @@ import torch.nn.functional as F
 from pytorch3d.renderer import MeshRasterizer, PerspectiveCameras, RasterizationSettings, TexturesUV
 from pytorch3d.structures import Meshes
 
-# TF32 matmuls (default in NGC images, and enabled by dust3r/croco on import) round to ~1e-3.
-# PyTorch3D's projection sums near-cancelling terms (f*X vs cx*Z ~ 1e5 for aerial cameras),
-# which gave ~6 px reprojection error on aerial thumbnails and ~0.4 px on ground images.
+# TF32 rounds to ~1e-3; PyTorch3D's projection sums near-cancelling terms (~1e5 for aerial cameras).
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
 torch.set_float32_matmul_precision("highest")
@@ -404,7 +412,8 @@ class OrientedImageTexturedDSMMesh:
 		return self.create_perspective_camera_from_rt(
 			R=target_orientation.extrinsic.get_rot(image2ground=True),
 			T=target_orientation.extrinsic.get_center(),
-			focal_length_px=ppa["f"], principal_point_px=(ppa["cx"]+0.5, ppa["cy"]+0.5),
+			# PyTorch3D pixel centres are at i+0.5, STOrientation's at i.
+			focal_length_px=ppa["f"], principal_point_px=(ppa["cx"] + 0.5, ppa["cy"] + 0.5),
 			image_size=(height, width),
 		)
 
@@ -423,6 +432,8 @@ class OrientedImageTexturedDSMMesh:
 
 		Target orientation accepts an object or XML path; image_size is (W,H).
 		Reuse the mesh for multiple targets; rebuild it to change the source image.
+		Approximate texturing (per-triangle UVs); kept for comparison, prefer
+		render_from_orientation_deferred.
 		"""
 		target_orientation = self._load_orientation(target_orientation)
 		camera = self.create_perspective_camera_from_orientation(target_orientation)
@@ -457,7 +468,7 @@ class OrientedImageTexturedDSMMesh:
 		"""
 		if self.mesh is None or self.source_orientation is None:
 			raise RuntimeError("Textured mesh is not built. Call build_textured_mesh(...) first.")
-		# Re-assert: a later dust3r/croco import sets allow_tf32=True, reintroducing the aerial pixel error.
+		# A dust3r/croco import after this module re-enables TF32 (see accuracy notes).
 		torch.backends.cuda.matmul.allow_tf32 = False
 		target_orientation = self._load_orientation(target_orientation)
 		camera = self.create_perspective_camera_from_orientation(target_orientation)
