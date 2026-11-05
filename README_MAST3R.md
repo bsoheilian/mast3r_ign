@@ -532,6 +532,15 @@ For those samples that were removed duee to pose errors an idea would be to use 
 - generating virtual aerial image (that would be perfectly matching). 
 
 
+### IGN data cleaning
+in some cases artifacts in lidar DTM lead to texturing errors. ideas : 
+- averaging ? 
+- min filter ? 
+
+### IGN negative match 
+an idea to create negative matches is to use obstacle masks
+
+
 
 
 ### Our Hyperparameters
