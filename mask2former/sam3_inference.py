@@ -160,3 +160,12 @@ if __name__ == "__main__":
     main()
 
 # cars trucks buses motorcycles bicycles pedestrians buildings rooftops houses trees bushes vegetation furniture traffic-signs street-lights poles
+# given that road areas are already segmented correctly and we need only to segment any other object that can apear over road mask we can maybe limite it to any object that 
+# can not be recognized from ground image: 
+#cars and any vehicle
+#pedestrians
+#rooftops , buildings hous 
+# vegetation
+#poles
+
+#do a first minimal test and validate on the results if it is correct. 
