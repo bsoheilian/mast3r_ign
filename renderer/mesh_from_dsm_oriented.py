@@ -111,6 +111,7 @@ class OrientedImageTexturedDSMMesh:
 		self.texture_valid_mask: Optional[torch.Tensor] = None
 		self.source_rgb: Optional[torch.Tensor] = None
 		self.source_orientation: Optional[STOrientation] = None
+		self.source_mask: Optional[torch.Tensor] = None
 
 	@staticmethod
 	def _load_orientation(value: Union[STOrientation, str, Path]) -> STOrientation:
@@ -263,6 +264,7 @@ class OrientedImageTexturedDSMMesh:
 		texture_sampling_mode: str = "bilinear",
 		*,
 		image_layout: Optional[str] = None,
+		source_mask: Optional[Union[np.ndarray, torch.Tensor]] = None,
 	) -> Meshes:
 		"""Project source UVs, attach full-resolution RGB, and replace mesh state.
 
@@ -270,6 +272,8 @@ class OrientedImageTexturedDSMMesh:
 		inferred from calibrated dimensions, with image_layout for ambiguous
 		arrays. source_rgb retains normalized full-resolution HWC on CUDA;
 		projected_pixels and texture_valid_mask describe vertex coverage.
+		source_mask is a Boolean source-image HxW mask (True means valid),
+		used only by deferred rendering. None means every pixel is valid.
 		"""
 		source_orientation = self._load_orientation(source_orientation)
 		if texture_sampling_mode not in ("nearest", "bilinear"):
@@ -277,6 +281,7 @@ class OrientedImageTexturedDSMMesh:
 		self._validate_orientation(source_orientation)
 		width, height = source_orientation.intrinsic.image_size
 		rgb = self._load_source_rgb(source_image, (width, height), image_layout)
+		prepared_mask = self._prepare_image_mask(source_mask, (height, width), "source_mask")
 		projected = self.project_vertices_to_image(source_orientation)
 		texture_valid = np.isfinite(projected).all(axis=2)
 		texture_valid_tensor = torch.as_tensor(texture_valid, device=self.device)
@@ -325,7 +330,42 @@ class OrientedImageTexturedDSMMesh:
 		self.mesh = mesh
 		self.source_rgb = source_rgb
 		self.source_orientation = source_orientation
+		self.source_mask = prepared_mask
 		return mesh
+
+	def _prepare_image_mask(
+		self,
+		mask: Optional[Union[np.ndarray, torch.Tensor]],
+		shape: Tuple[int, int],
+		name: str,
+	) -> Optional[torch.Tensor]:
+		"""Validate an optional image-space Boolean mask without resizing it."""
+		if mask is None:
+			return None
+		if not isinstance(mask, (np.ndarray, torch.Tensor)):
+			raise TypeError(f"{name} must be a Boolean NumPy array or torch tensor.")
+		if mask.dtype not in (np.dtype(bool), torch.bool):
+			raise TypeError(f"{name} must have Boolean dtype (True means valid).")
+		if tuple(mask.shape) != tuple(shape):
+			raise ValueError(f"{name} shape {tuple(mask.shape)} must match image shape {tuple(shape)}.")
+		return torch.as_tensor(mask, device=self.device).clone()
+
+	@staticmethod
+	def _source_mask_validity(mask: torch.Tensor, grid: torch.Tensor) -> torch.Tensor:
+		"""Require every nonzero-weight bilinear contributor to be valid."""
+		height, width = mask.shape
+		#check all grid points are finite and within the normalized image plane [-1, 1]
+		inside = torch.isfinite(grid).all(1) & (grid.abs() <= 1).all(1)
+		
+		safe_grid = torch.where(inside[:, None], grid, torch.zeros_like(grid))
+		pixels = (safe_grid + 1) / 2 * grid.new_tensor([width - 1, height - 1])
+		lower = pixels.floor().long()
+		upper = pixels.ceil().long()
+		#check if all four bilinear contributor pixels are valid according to the mask
+		return inside & (
+			mask[lower[:, 1], lower[:, 0]] & mask[lower[:, 1], upper[:, 0]]
+			& mask[upper[:, 1], lower[:, 0]] & mask[upper[:, 1], upper[:, 0]]
+		)
 
 	def render_perspective(
 		self,
@@ -460,11 +500,16 @@ class OrientedImageTexturedDSMMesh:
 		target_orientation: Union[STOrientation, str, Path],
 		bin_size: Optional[int] = None,
 		max_faces_per_bin: Optional[int] = None,
+		*,
+		target_mask: Optional[Union[np.ndarray, torch.Tensor]] = None,
 	) -> Tuple[torch.Tensor, torch.Tensor]:
 		"""Like render_from_orientation, but textures each pixel by exact projection into the source.
 
 		Avoids the per-triangle UV interpolation error of TexturesUV, which grows
 		with depth variation across a face (large near-range triangles).
+		Source and target masks reject pixels with black RGB and NaN depth,
+		without removing geometry. target_mask is Boolean target-image HxW;
+		None means every target pixel is valid.
 		"""
 		if self.mesh is None or self.source_orientation is None:
 			raise RuntimeError("Textured mesh is not built. Call build_textured_mesh(...) first.")
@@ -473,31 +518,55 @@ class OrientedImageTexturedDSMMesh:
 		target_orientation = self._load_orientation(target_orientation)
 		camera = self.create_perspective_camera_from_orientation(target_orientation)
 		width, height = target_orientation.intrinsic.image_size
+		target_mask = self._prepare_image_mask(target_mask, (height, width), "target_mask")
 		fragments = MeshRasterizer(
 			cameras=camera,
 			raster_settings=RasterizationSettings(
 				image_size=(height, width), bin_size=bin_size, max_faces_per_bin=max_faces_per_bin,
 			),
 		)(self.mesh)
+		# get the index of triangle for every pixels of the output image with size = height, width
 		pix_to_face = fragments.pix_to_face[0, ..., 0]
+		#if the index < 0 it means the pixel does not hit any triangle
 		hit = pix_to_face >= 0
+		rgb = torch.zeros((height, width, 3), device=self.device)
+		depth = fragments.zbuf[0, ..., 0].clone()
+		#set depth as nan if the pixel is not seen in the mesh (any triangle hits)
+		depth[~hit] = torch.nan
+		
+		if not hit.any(): # no pixels hit any triangle so the output will be a black image with NaN depth
+			return rgb, depth
 		bary = fragments.bary_coords[0, ..., 0, :][hit].double().unsqueeze(-1)
 		face_verts = self.vertices[self.faces[pix_to_face[hit]]].double()
+		# 3D coordinates of the hit points in world space
 		X = (bary * face_verts).sum(1) + self.render_origin_world.double()
 
+		# project the 3D points to the source image plane get image coordinates and depth (uv, z)
 		uv, z = self._project_to_source(X)
 		src_h, src_w = self.source_rgb.shape[:2]
-		grid = torch.stack([uv[:, 0] / (src_w - 1), uv[:, 1] / (src_h - 1)], 1) * 2 - 1
+		# normalize the coordinates between -1 and 1 for grid sampling
+		grid = torch.stack([
+			uv[:, 0] / (src_w - 1) if src_w > 1 else torch.full_like(z, 0.5),
+			uv[:, 1] / (src_h - 1) if src_h > 1 else torch.full_like(z, 0.5),
+		], 1) * 2 - 1
+		grid = grid.float()
+		# check z > 0 and both coordinates u and v are finite and between -1 and 1
+		accepted = (z > 0) & torch.isfinite(grid).all(1) & (grid.abs() <= 1).all(1)
+		# check if the supplied texture is valid according to the source mask
+		if self.source_mask is not None:
+			accepted &= self._source_mask_validity(self.source_mask, grid)
+		# check if the target can recieve texture according to the target mask
+		if target_mask is not None:
+			accepted &= target_mask[hit]
 		sampled = F.grid_sample(
 			self.source_rgb.permute(2, 0, 1).unsqueeze(0),
-			grid.float().view(1, 1, -1, 2), mode="bilinear", align_corners=True,
+			grid.view(1, 1, -1, 2), mode="bilinear", align_corners=True,
 		)[0, :, 0].T
-		sampled[~((z > 0) & (grid.abs() <= 1).all(1))] = 0.0
+		sampled[~accepted] = 0.0
 
-		rgb = torch.zeros((height, width, 3), device=self.device)
 		rgb[hit] = sampled
-		depth = fragments.zbuf[0, ..., 0].clone()
-		depth[~hit] = torch.nan
+		if self.source_mask is not None or target_mask is not None:
+			depth[hit] = torch.where(accepted, depth[hit], torch.nan)
 		return rgb, depth
 
 if __name__ == "__main__":
