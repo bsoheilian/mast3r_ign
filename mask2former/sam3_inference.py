@@ -16,6 +16,74 @@ def inference_autocast(device: str):
     return nullcontext()
 
 
+def display_overlay(overlay, prompts, class_masks, colors):
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+
+    figure, (image_axes, legend_axes) = plt.subplots(
+        1, 2,
+        figsize=(12, 8),
+        gridspec_kw={"width_ratios": [4, 1]},
+        constrained_layout=True,
+    )
+    image_axes.imshow(overlay)
+    image_axes.axis("off")
+    legend_axes.axis("off")
+    legend_axes.legend(
+        handles=[
+            Patch(
+                facecolor=np.array(colors[index % len(colors)]) / 255,
+                label=prompt,
+            )
+            for index, prompt in enumerate(prompts)
+        ],
+        loc="upper left",
+        title="Classes",
+        frameon=False,
+    )
+    tooltip = image_axes.annotate(
+        "",
+        xy=(0, 0),
+        xytext=(12, 12),
+        textcoords="offset points",
+        bbox={"boxstyle": "round,pad=0.3", "fc": "white", "alpha": 0.9},
+    )
+    tooltip.set_visible(False)
+    height, width = overlay.shape[:2]
+
+    def on_motion(event):
+        if event.inaxes is not image_axes or event.xdata is None or event.ydata is None:
+            if tooltip.get_visible():
+                tooltip.set_visible(False)
+                figure.canvas.draw_idle()
+            return
+
+        column = int(np.floor(event.xdata + 0.5))
+        row = int(np.floor(event.ydata + 0.5))
+        if not (0 <= column < width and 0 <= row < height):
+            tooltip.set_visible(False)
+            figure.canvas.draw_idle()
+            return
+
+        labels = [
+            prompt
+            for prompt, class_mask in zip(prompts, class_masks)
+            if class_mask[row, column]
+        ]
+        tooltip.xy = (event.xdata, event.ydata)
+        tooltip.set_text("\n".join(labels) if labels else "Background")
+        tooltip.set_position((12 if column < width / 2 else -12,
+                              12 if row >= height / 2 else -12))
+        tooltip.set_horizontalalignment("left" if column < width / 2 else "right")
+        tooltip.set_verticalalignment("bottom" if row >= height / 2 else "top")
+        tooltip.set_visible(True)
+        figure.canvas.draw_idle()
+
+    figure.canvas.mpl_connect("motion_notify_event", on_motion)
+    figure.canvas.mpl_connect("figure_leave_event", on_motion)
+    plt.show()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Run SAM 3 text-prompted segmentation on an image."
@@ -27,9 +95,24 @@ def main():
         help="Output directory (default: sam3_output)",
     )
     parser.add_argument(
+        "--output-mode",
+        choices=["overlay", "all", "display"],
+        default="all",
+        help="Save overlay only, save all outputs, or display without saving (default: all)",
+    )
+    parser.add_argument(
+        "-display",
+        "--display",
+        dest="output_mode",
+        action="store_const",
+        const="display",
+        default=argparse.SUPPRESS,
+        help="Show the overlay without saving outputs",
+    )
+    parser.add_argument(
         "--prompts",
         nargs="+",
-        default=["road", "building", "car"],
+        default=["cars", "trees", "vegetations", "buildings", "trucks", "furnitures", "poles", "buses", "motorcycles", "bicycles", "pedestrians", "crane", "stairs", "water", "chars", "roofs"],
         help="Text prompts to segment",
     )
     parser.add_argument(
@@ -42,7 +125,8 @@ def main():
 
     image_path = Path(args.image)
     output_dir = Path(args.output)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if args.output_mode != "display":
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load the image
     image = Image.open(image_path).convert("RGB")
@@ -111,10 +195,11 @@ def main():
             )
 
         # Save binary mask: 255 = detected, 0 = background.
-        mask_path = output_dir / f"{i:02d}_{prompt.replace(' ', '_')}_mask.png"
-        Image.fromarray(
-            class_mask.astype(np.uint8) * 255
-        ).save(mask_path)
+        if args.output_mode == "all":
+            mask_path = output_dir / f"{i:02d}_{prompt.replace(' ', '_')}_mask.png"
+            Image.fromarray(
+                class_mask.astype(np.uint8) * 255
+            ).save(mask_path)
 
         color = colors[i % len(colors)]
 
@@ -124,10 +209,12 @@ def main():
             + 0.5 * np.array(color)
         ).astype(np.uint8)
 
-        combined_masks.append(class_mask)
+        if args.output_mode in ("all", "display"):
+            combined_masks.append(class_mask)
 
         print(f"  Instances detected: {len(scores)}")
-        print(f"  Mask saved: {mask_path}")
+        if args.output_mode == "all":
+            print(f"  Mask saved: {mask_path}")
 
         for j, (score, box) in enumerate(zip(scores, boxes)):
             x0, y0, x1, y1 = box
@@ -138,22 +225,28 @@ def main():
             )
 
     # Save combined overlay
-    overlay_path = output_dir / "overlay.png"
-    Image.fromarray(overlay).save(overlay_path)
+    if args.output_mode == "display":
+        display_overlay(overlay, args.prompts, combined_masks, colors)
+    else:
+        overlay_path = output_dir / "overlay.png"
+        Image.fromarray(overlay).save(overlay_path)
 
     # Save union of all prompted classes
-    if combined_masks:
-        union = np.logical_or.reduce(combined_masks)
-    else:
-        union = np.zeros((image.height, image.width), dtype=bool)
+    if args.output_mode == "all":
+        if combined_masks:
+            union = np.logical_or.reduce(combined_masks)
+        else:
+            union = np.zeros((image.height, image.width), dtype=bool)
 
-    union_path = output_dir / "all_classes_mask.png"
-    Image.fromarray(union.astype(np.uint8) * 255).save(union_path)
+        union_path = output_dir / "all_classes_mask.png"
+        Image.fromarray(union.astype(np.uint8) * 255).save(union_path)
 
     print("\nFinished.")
-    print(f"Overlay: {overlay_path}")
-    print(f"Combined mask: {union_path}")
-    print(f"Output directory: {output_dir.resolve()}")
+    if args.output_mode != "display":
+        print(f"Overlay: {overlay_path}")
+        if args.output_mode == "all":
+            print(f"Combined mask: {union_path}")
+        print(f"Output directory: {output_dir.resolve()}")
 
 
 if __name__ == "__main__":
@@ -167,5 +260,6 @@ if __name__ == "__main__":
 #rooftops , buildings hous 
 # vegetation
 #poles
+#crane grue
 
 #do a first minimal test and validate on the results if it is correct. 
